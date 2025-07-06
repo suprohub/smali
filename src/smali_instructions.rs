@@ -1,4 +1,5 @@
 use crate::types::{parse_methodsignature, parse_typesignature};
+use nom::Parser;
 use nom::bytes::complete::escaped;
 use nom::character::complete::{none_of, one_of};
 use nom::combinator::opt;
@@ -25,8 +26,8 @@ fn is_label_char(c: char) -> bool {
 /// Parse a label in smali syntax, e.g. ":cond_0"
 pub fn parse_label(input: &str) -> IResult<&str, Label> {
     // Expect a colon first, then one or more valid characters.
-    let (input, _) = tag(":")(input)?;
-    let (input, label_body) = take_while1(is_label_char)(input)?;
+    let (input, _) = tag(":").parse(input)?;
+    let (input, label_body) = take_while1(is_label_char).parse(input)?;
     Ok((input, Label(label_body.to_string())))
 }
 
@@ -1704,7 +1705,7 @@ impl fmt::Display for DexInstruction {
 /// Parse a register reference like "v0" or "p1", returning its number.
 fn parse_register(input: &str) -> IResult<&str, SmaliRegister> {
     // We accept either 'v' or 'p' followed by one or more digits.
-    let (input, t) = alt((char('v'), char('p')))(input)?;
+    let (input, t) = alt((char('v'), char('p'))).parse(input)?;
     let (input, num_str) = digit1(input)?;
     let num = num_str.parse::<u16>().unwrap();
     Ok((
@@ -1722,7 +1723,8 @@ fn parse_register_list(input: &str) -> IResult<&str, Vec<SmaliRegister>> {
         char('{'),
         separated_list0(delimited(space0, char(','), space0), parse_register),
         char('}'),
-    )(input)
+    )
+    .parse(input)
 }
 
 /// Parses a string literal that may be empty.
@@ -1735,7 +1737,8 @@ fn parse_string_literal(input: &str) -> IResult<&str, String> {
         pair(multispace0, char('"')),
         esc_or_empty,
         pair(char('"'), multispace0),
-    )(input)?;
+    )
+    .parse(input)?;
 
     IResult::Ok((i, s.to_string()))
 
@@ -1744,7 +1747,7 @@ fn parse_string_literal(input: &str) -> IResult<&str, String> {
         // Use take_while instead of take_while1 so that the inner content may be empty.
         map(take_while(|c| c != '"'), |s: &str| s.to_string()),
         char('"')
-    )(input)*/
+    ).parse(input)*/
 }
 
 pub(crate) fn parse_literal_int<T>(input: &str) -> IResult<&str, T>
@@ -1753,12 +1756,12 @@ where
     <T as TryFrom<i64>>::Error: Debug,
 {
     // Consume an optional sign.
-    let (input, sign) = opt(char('-'))(input)?;
+    let (input, sign) = opt(char('-')).parse(input)?;
 
     if input.starts_with("0x") || input.starts_with("0X") {
-        let (input, _) = alt((tag("0x"), tag("0X")))(input)?;
-        let (input, hex_digits) = take_while1(|c: char| c.is_ascii_hexdigit())(input)?;
-        let (input, _) = opt(char('L'))(input)?;
+        let (input, _) = alt((tag("0x"), tag("0X"))).parse(input)?;
+        let (input, hex_digits) = take_while1(|c: char| c.is_ascii_hexdigit()).parse(input)?;
+        let (input, _) = opt(char('L')).parse(input)?;
         if sign.is_some() {
             // Parse the digits as a u64, then handle the negative value.
             let value_u64 = u64::from_str_radix(hex_digits, 16).map_err(|_| {
@@ -1792,7 +1795,7 @@ where
         }
     } else {
         let (input, num_str) = digit1(input)?;
-        let (input, _) = opt(char('L'))(input)?;
+        let (input, _) = opt(char('L')).parse(input)?;
         let mut value_i64 = num_str.parse::<i64>().map_err(|_| {
             nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit))
         })?;
@@ -1814,12 +1817,12 @@ pub(crate) fn parse_literal_int<T>(input: &str) -> IResult<&str, T>
         <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
     // Consume an optional sign.
-    let (input, sign) = opt(char('-'))(input)?;
+    let (input, sign) = opt(char('-')).parse(input)?;
 
     if input.starts_with("0x") || input.starts_with("0X") {
-        let (input, _) = alt((tag("0x"), tag("0X")))(input)?;
-        let (input, hex_digits) = take_while1(|c: char| c.is_digit(16))(input)?;
-        let (input, _) = opt(char('L'))(input)?;
+        let (input, _) = alt((tag("0x"), tag("0X"))).parse(input)?;
+        let (input, hex_digits) = take_while1(|c: char| c.is_digit(16)).parse(input)?;
+        let (input, _) = opt(char('L')).parse(input)?;
         let mut value_i64 = i64::from_str_radix(hex_digits, 16)
             .map_err(|_| nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit)))?;
         if sign.is_some() {
@@ -1829,7 +1832,7 @@ pub(crate) fn parse_literal_int<T>(input: &str) -> IResult<&str, T>
         Ok((input, value))
     } else {
         let (input, num_str) = digit1(input)?;
-        let (input, _) = opt(char('L'))(input)?;
+        let (input, _) = opt(char('L')).parse(input)?;
         let mut value_i64 = num_str.parse::<i64>()
             .map_err(|_| nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit)))?;
         if sign.is_some() {
@@ -1847,10 +1850,10 @@ pub(crate) fn parse_literal_int<T>(input: &str) -> IResult<&str, T>
 ///    Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
 fn parse_method_ref(input: &str) -> IResult<&str, MethodRef> {
     // Parse until the "->"
-    let (input, class) = take_until("->")(input)?;
-    let (input, _) = tag("->")(input)?;
+    let (input, class) = take_until("->").parse(input)?;
+    let (input, _) = tag("->").parse(input)?;
     // Parse the method name (up to the opening parenthesis)
-    let (input, name) = take_until("(")(input)?;
+    let (input, name) = take_until("(").parse(input)?;
     let (input, descriptor) = parse_methodsignature(input)?;
 
     Ok((
@@ -1865,11 +1868,11 @@ fn parse_method_ref(input: &str) -> IResult<&str, MethodRef> {
 
 fn parse_field_ref(input: &str) -> IResult<&str, FieldRef> {
     // Parse until the "->"
-    let (input, class) = take_until("->")(input)?;
-    let (input, _) = tag("->")(input)?;
+    let (input, class) = take_until("->").parse(input)?;
+    let (input, _) = tag("->").parse(input)?;
     // Parse the method name (up to the opening parenthesis)
-    let (input, name) = take_until(":")(input)?;
-    let (input, _) = tag(":")(input)?;
+    let (input, name) = take_until(":").parse(input)?;
+    let (input, _) = tag(":").parse(input)?;
     let (input, descriptor) = parse_typesignature(input)?;
 
     Ok((
@@ -1885,7 +1888,7 @@ fn parse_field_ref(input: &str) -> IResult<&str, FieldRef> {
 fn parse_const_high16(input: &str) -> IResult<&str, DexInstruction> {
     let (input, _) = space1(input)?;
     let (input, dest) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, value32): (&str, i32) = parse_literal_int(input)?;
     let value = (value32 >> 16) as i16;
     Ok((input, DexInstruction::ConstHigh16 { dest, value }))
@@ -1894,7 +1897,7 @@ fn parse_const_high16(input: &str) -> IResult<&str, DexInstruction> {
 fn parse_const_wide_high16(input: &str) -> IResult<&str, DexInstruction> {
     let (input, _) = space1(input)?;
     let (input, dest) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, value64): (&str, i64) = parse_literal_int(input)?;
     let value = (value64 >> 48) as i16;
     Ok((input, DexInstruction::ConstWideHigh16 { dest, value }))
@@ -1909,20 +1912,20 @@ fn parse_unused(input: &str) -> IResult<&str, DexInstruction> {
 /// Parses a register range enclosed in braces, e.g. "{v0 .. v6}".
 /// Returns a tuple (first_reg, last_reg)
 fn parse_register_range(input: &str) -> IResult<&str, RegisterRange> {
-    let (input, _) = delimited(space0, char('{'), space0)(input)?;
+    let (input, _) = delimited(space0, char('{'), space0).parse(input)?;
     let (input, start) = parse_register(input)?;
-    let (input, _) = delimited(space0, tag(".."), space0)(input)?;
+    let (input, _) = delimited(space0, tag(".."), space0).parse(input)?;
     let (input, end) = parse_register(input)?;
-    let (input, _) = delimited(space0, char('}'), space0)(input)?;
+    let (input, _) = delimited(space0, char('}'), space0).parse(input)?;
     Ok((input, RegisterRange { start, end }))
 }
 
 fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexInstruction> {
     let (input, _) = space1(input)?;
     let (input, registers) = parse_register_list(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, method) = parse_method_ref(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, proto) = alphanumeric1(input)?;
     Ok((
         input,
@@ -1937,9 +1940,9 @@ fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexInstruction> {
 fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexInstruction> {
     let (input, _) = space1(input)?;
     let (input, range) = parse_register_range(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, method) = parse_method_ref(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, proto) = alphanumeric1(input)?;
     Ok((
         input,
@@ -1954,7 +1957,7 @@ fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexInstruction> 
 fn parse_invoke_custom(input: &str) -> IResult<&str, DexInstruction> {
     let (input, _) = space1(input)?;
     let (input, registers) = parse_register_list(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, call_site) = alphanumeric1(input)?;
     Ok((
         input,
@@ -1968,7 +1971,7 @@ fn parse_invoke_custom(input: &str) -> IResult<&str, DexInstruction> {
 fn parse_invoke_custom_range(input: &str) -> IResult<&str, DexInstruction> {
     let (input, _) = space1(input)?;
     let (input, range) = parse_register_range(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, call_site) = alphanumeric1(input)?;
     Ok((
         input,
@@ -1985,7 +1988,7 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, registers) = parse_register_list(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, method) = parse_method_ref(input)?;
     Ok((input, constructor(registers, method)))
 }
@@ -2024,7 +2027,7 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, r1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, r2) = parse_register(input)?;
     Ok((input, constructor(r1, r2)))
 }
@@ -2048,9 +2051,9 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, r1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, r2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, r3) = parse_register(input)?;
     Ok((input, constructor(r1, r2, r3)))
 }
@@ -2078,7 +2081,7 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, reg) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, literal) = parse_literal_int::<T>(input)?;
     Ok((input, constructor(reg, literal)))
 }
@@ -2101,9 +2104,9 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, r1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, r2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, literal) = parse_literal_int::<T>(input)?;
     Ok((input, constructor(r1, r2, literal)))
 }
@@ -2124,7 +2127,7 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, dest) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, field) = parse_field_ref(input)?;
     Ok((input, constructor(dest, field)))
 }
@@ -2144,9 +2147,9 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, reg1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, reg2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, field) = parse_field_ref(input)?;
     Ok((input, constructor(reg1, reg2, field)))
 }
@@ -2169,10 +2172,10 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, reg) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
 
     // A string literal will have quotes
-    let r: IResult<&str, &str> = tag("\"")(input);
+    let r: IResult<&str, &str> = tag("\"").parse(input);
     let (input, literal) = match r {
         IResult::Ok(_) => parse_string_literal(input)?,
         IResult::Err(_) => {
@@ -2198,12 +2201,12 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, reg1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, reg2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
 
     // A string literal will have quotes
-    let r: IResult<&str, &str> = tag("\"")(input);
+    let r: IResult<&str, &str> = tag("\"").parse(input);
     let (input, literal) = match r {
         IResult::Ok(_) => parse_string_literal(input)?,
         IResult::Err(_) => {
@@ -2230,7 +2233,7 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, reg) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, label) = parse_label(input)?;
     Ok((input, constructor(reg, label)))
 }
@@ -2250,9 +2253,9 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, reg1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, reg2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, label) = parse_label(input)?;
     Ok((input, constructor(reg1, reg2, label)))
 }
@@ -2273,7 +2276,7 @@ where
 {
     let (input, _) = space1(input)?;
     let (input, range) = parse_register_range(input)?;
-    let (input, _) = delimited(space0, char(','), space0)(input)?;
+    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, method) = parse_method_ref(input)?;
     Ok((input, constructor(range, method)))
 }
@@ -2289,7 +2292,8 @@ macro_rules! range_method_case {
 
 // Higher level parser for all operations
 pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
-    let (input, op) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '/')(input)?;
+    let (input, op) =
+        take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '/').parse(input)?;
     let r = match op {
         // Invoke instructions
         "invoke-static" => invoke_case!(InvokeStatic, input),
@@ -2517,15 +2521,15 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
 
         // Gotos = 1 label
         "goto" => {
-            let (_, offset) = preceded(space1, parse_label)(input)?;
+            let (_, offset) = preceded(space1, parse_label).parse(input)?;
             IResult::Ok((input, DexInstruction::Goto { offset }))
         }
         "goto/16" => {
-            let (_, offset) = preceded(space1, parse_label)(input)?;
+            let (_, offset) = preceded(space1, parse_label).parse(input)?;
             IResult::Ok((input, DexInstruction::Goto16 { offset }))
         }
         "goto/32" => {
-            let (_, offset) = preceded(space1, parse_label)(input)?;
+            let (_, offset) = preceded(space1, parse_label).parse(input)?;
             IResult::Ok((input, DexInstruction::Goto32 { offset }))
         }
 
@@ -2544,14 +2548,14 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "filled-new-array" => {
             let (input, _) = space1(input)?;
             let (input, registers) = parse_register_list(input)?;
-            let (input, _) = delimited(space0, char(','), space0)(input)?;
+            let (input, _) = delimited(space0, char(','), space0).parse(input)?;
             let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
             Ok((input, DexInstruction::FilledNewArray { registers, class }))
         }
         "filled-new-array/range" => {
             let (input, _) = space1(input)?;
             let (input, range) = parse_register_range(input)?;
-            let (input, _) = delimited(space0, char(','), space0)(input)?;
+            let (input, _) = delimited(space0, char(','), space0).parse(input)?;
             let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
             Ok((
                 input,

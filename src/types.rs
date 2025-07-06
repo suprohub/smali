@@ -10,13 +10,13 @@ use crate::smali_instructions::{DexInstruction, Label};
 use crate::smali_parse::parse_class;
 use crate::smali_write::write_class;
 use nom::Err::Failure;
-use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while};
 use nom::character::complete::{alphanumeric0, char};
 use nom::error::ErrorKind;
 use nom::multi::many0;
 use nom::sequence::terminated;
+use nom::{IResult, Parser};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::hash::{Hash, Hasher};
@@ -300,17 +300,17 @@ impl MethodSignature {
 
 pub(crate) fn parse_typesignature(smali: &str) -> IResult<&str, TypeSignature> {
     // Any type parameters
-    let gt: IResult<&str, _> = char('<')(smali);
+    let gt: IResult<&str, _> = char('<').parse(smali);
     if let Ok((o, _)) = gt {
         // Type Arguments
-        let (o, ta) = many0(parse_typesignature)(o)?;
+        let (o, ta) = many0(parse_typesignature).parse(o)?;
         let (o, _) = char('>')(o)?;
         let (nxt, ts_rest) = parse_typesignature(o)?;
         return Ok((nxt, TypeSignature::TypeParameters(ta, Box::new(ts_rest))));
     }
 
     // Any type identifiers ?
-    let identifier_tag: IResult<&str, &str> = terminated(alphanumeric0, char(':'))(smali);
+    let identifier_tag: IResult<&str, &str> = terminated(alphanumeric0, char(':')).parse(smali);
     if let Ok((o, i)) = identifier_tag {
         let (nxt, nxt_ts) = parse_typesignature(o)?;
         return Ok((
@@ -322,7 +322,7 @@ pub(crate) fn parse_typesignature(smali: &str) -> IResult<&str, TypeSignature> {
     // Object
     let mut type_arguments = None;
     let mut suffix = None;
-    let l: IResult<&str, &str> = tag("L")(smali);
+    let l: IResult<&str, &str> = tag("L").parse(smali);
     if let Ok((o, _)) = l {
         let mut nxt;
         let (o, t) = take_while(|x| (x != ';') && (x != '<'))(o)?;
@@ -330,7 +330,7 @@ pub(crate) fn parse_typesignature(smali: &str) -> IResult<&str, TypeSignature> {
         let gt: IResult<&str, std::primitive::char> = char('<')(o);
         if let Ok((o, _)) = gt {
             // Type Arguments
-            let (o, ta) = many0(parse_typesignature)(o)?;
+            let (o, ta) = many0(parse_typesignature).parse(o)?;
             let (o, _) = char('>')(o)?;
             type_arguments = Some(ta);
             nxt = o;
@@ -354,7 +354,7 @@ pub(crate) fn parse_typesignature(smali: &str) -> IResult<&str, TypeSignature> {
     }
 
     // Type Variable
-    let l: IResult<&str, &str> = tag("T")(smali);
+    let l: IResult<&str, &str> = tag("T").parse(smali);
     if let Ok((o, _)) = l {
         let (o, t) = take_while(|x| x != ';')(o)?;
         let nxt = o;
@@ -364,7 +364,7 @@ pub(crate) fn parse_typesignature(smali: &str) -> IResult<&str, TypeSignature> {
     }
 
     // Array
-    let b: IResult<&str, &str> = tag("[")(smali);
+    let b: IResult<&str, &str> = tag("[").parse(smali);
     if let Ok((o, _)) = b {
         let (o, t) = parse_typesignature(o)?;
         return Ok((o, TypeSignature::Array(Box::new(t))));
@@ -384,7 +384,8 @@ pub(crate) fn parse_typesignature(smali: &str) -> IResult<&str, TypeSignature> {
         tag("*"),
         tag("+"),
         tag("-"),
-    ))(smali);
+    ))
+    .parse(smali);
     if let Ok((o, t)) = p {
         let ts = match t {
             "Z" => TypeSignature::Bool,
@@ -416,13 +417,13 @@ pub(crate) fn parse_methodsignature(smali: &str) -> IResult<&str, MethodSignatur
     let gt: IResult<&str, _> = char('<')(nxt);
     if let Ok((o, _)) = gt {
         // Type Arguments
-        let (o, ta) = many0(parse_typesignature)(o)?;
+        let (o, ta) = many0(parse_typesignature).parse(o)?;
         let (o, _) = char('>')(o)?;
         type_parameters = Some(ta);
         nxt = o;
     }
     let (o, _) = tag("(")(nxt)?;
-    let (o, a) = many0(parse_typesignature)(o)?;
+    let (o, a) = many0(parse_typesignature).parse(o)?;
     let (o, _) = tag(")")(o)?;
     let (o, r) = parse_typesignature(o)?;
     nxt = o;

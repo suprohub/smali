@@ -2,7 +2,6 @@ use crate::smali_instructions::parse_instruction as parse_dex_instruction;
 use crate::smali_instructions::{Label, parse_label, parse_literal_int};
 use crate::types::*;
 use nom::Err::Failure;
-use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag, take_while, take_while1};
 use nom::character::complete::{
@@ -10,18 +9,19 @@ use nom::character::complete::{
     space0, space1,
 };
 use nom::combinator::{opt, value};
-use nom::error::{Error, ErrorKind};
+use nom::error::{Error, ErrorKind, ParseError};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, preceded, terminated};
+use nom::{IResult, Parser};
 
-fn ws<'a, F: 'a, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
+pub fn ws<'a, O, E: ParseError<&'a str>, F>(inner: F) -> impl Parser<&'a str, Output = O, Error = E>
 where
-    F: Fn(&'a str) -> IResult<&'a str, O>,
+    F: Parser<&'a str, Output = O, Error = E>,
 {
     delimited(multispace0, inner, multispace0)
 }
 
-fn quoted<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
+fn quoted<'a, E: ParseError<&'a str>>() -> impl Parser<&'a str, Output = &'a str, Error = E> {
     let esc = escaped(none_of("\\\""), '\\', one_of("'\"tbnrfu\\"));
     let esc_or_empty = alt((esc, tag("")));
 
@@ -36,7 +36,8 @@ pub fn comment(i: &str) -> IResult<&str, ()> {
     let (v, _) = value(
         (), // Output is thrown away.
         pair(char('#'), is_not("\n\r")),
-    )(i)?;
+    )
+    .parse(i)?;
     let (o, _) = newline(v)?;
     IResult::Ok((o, ()))
 }
@@ -65,7 +66,8 @@ fn parse_modifiers(smali: &str) -> IResult<&str, Vec<Modifier>> {
         ws(tag("strict ")),
         ws(tag("bridge ")),
         ws(tag("constructor ")),
-    )))(smali)?;
+    )))
+    .parse(smali)?;
     let mut v = vec![];
     for m in mods {
         v.push(Modifier::from_str(m.trim()));
@@ -75,7 +77,7 @@ fn parse_modifiers(smali: &str) -> IResult<&str, Vec<Modifier>> {
 
 fn parse_visibility(smali: &str) -> IResult<&str, AnnotationVisibility> {
     let (input, visibility) =
-        alt((ws(tag("build")), ws(tag("runtime")), ws(tag("system"))))(smali)?;
+        alt((ws(tag("build")), ws(tag("runtime")), ws(tag("system")))).parse(smali)?;
     IResult::Ok((input, AnnotationVisibility::from_str(visibility)))
 }
 
@@ -106,38 +108,38 @@ fn parse_implements_line(smali: &str) -> IResult<&str, String> {
 
 fn parse_source_line(smali: &str) -> IResult<&str, String> {
     let (input, _) = tag(".source")(smali)?;
-    let (input, class_type) = quoted()(input)?;
+    let (input, class_type) = quoted().parse(input)?;
     Ok((input, class_type.trim().to_string()))
 }
 
 fn parse_java_array(smali: &str) -> IResult<&str, Vec<String>> {
-    let (o, _) = ws(tag("{"))(smali)?;
+    let (o, _) = ws(tag("{")).parse(smali)?;
     // Array of strings
     let mut v = vec![];
 
     let mut input = o;
     loop {
-        if let IResult::Ok((o, s)) = quoted()(input) {
+        if let IResult::Ok((o, s)) = quoted::<Error<&str>>().parse(input) {
             v.push(format!("\"{s}\""));
             input = o;
         }
-        if let IResult::Ok((o, s)) = ws(is_not(",}}"))(input) {
+        if let IResult::Ok((o, s)) = ws(is_not::<&str, &str, Error<&str>>(",}}")).parse(input) {
             v.push(s.to_string());
             input = o;
         }
 
-        if let IResult::Ok((o, _)) = ws(tag("}"))(input) {
+        if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>("}")).parse(input) {
             return Ok((o, v));
         }
 
-        let (o, _) = tag(",")(input)?;
+        let (o, _) = tag(",").parse(input)?;
         input = o;
     }
 }
 
 fn parse_annotation_element(smali: &str) -> IResult<&str, AnnotationElement> {
-    let (input, name) = ws(alphanumeric1)(smali)?;
-    let (i, _) = tag("=")(input)?;
+    let (input, name) = ws(alphanumeric1).parse(smali)?;
+    let (i, _) = tag("=").parse(input)?;
 
     let mut input = i;
 
@@ -163,7 +165,7 @@ fn parse_annotation_element(smali: &str) -> IResult<&str, AnnotationElement> {
             input = i;
             AnnotationValue::Array(elements)
         } else {
-            let (i, v) = ws(not_line_ending)(input)?;
+            let (i, v) = ws(not_line_ending).parse(input)?;
             input = i;
             AnnotationValue::Single(v.to_string())
         }
@@ -173,10 +175,10 @@ fn parse_annotation_element(smali: &str) -> IResult<&str, AnnotationElement> {
 }
 
 fn parse_enum(smali: &str) -> IResult<&str, AnnotationValue> {
-    let (input, _) = ws(tag(".enum"))(smali)?;
-    let (input, object) = ws(take_while(|c| c != '-'))(input)?;
-    let (input, _) = tag("->")(input)?;
-    let (input, field) = take_while(|x| x != ':' && x != '\n')(input)?;
+    let (input, _) = ws(tag(".enum")).parse(smali)?;
+    let (input, object) = ws(take_while(|c| c != '-')).parse(input)?;
+    let (input, _) = tag("->").parse(input)?;
+    let (input, field) = take_while(|x| x != ':' && x != '\n').parse(input)?;
     let (input, _) = take_until_eol(input)?;
     Ok((
         input,
@@ -189,13 +191,13 @@ fn parse_annotation(smali: &str, subannotation: bool) -> IResult<&str, SmaliAnno
     let input;
     let mut visibility = AnnotationVisibility::System;
     if !subannotation {
-        let (o, _) = ws(tag(".annotation"))(smali)?;
+        let (o, _) = ws(tag(".annotation")).parse(smali)?;
         let (o, v) = parse_visibility(o)?;
         end_tag = ".end annotation";
         input = o;
         visibility = v;
     } else {
-        let (o, _) = ws(tag(".subannotation"))(smali)?;
+        let (o, _) = ws(tag(".subannotation")).parse(smali)?;
         end_tag = ".end subannotation";
         input = o;
     }
@@ -214,7 +216,7 @@ fn parse_annotation(smali: &str, subannotation: bool) -> IResult<&str, SmaliAnno
         let mut found = false;
 
         // Is it the end
-        let end: IResult<&str, &str> = ws(tag(end_tag))(input);
+        let end: IResult<&str, &str> = ws(tag(end_tag)).parse(input);
         if let IResult::Ok((o, _)) = end {
             return Ok((o, annotation));
         }
@@ -239,9 +241,9 @@ fn parse_annotation(smali: &str, subannotation: bool) -> IResult<&str, SmaliAnno
 fn parse_field(smali: &str) -> IResult<&str, SmaliField> {
     let (input, _) = tag(".field")(smali)?;
     let (input, modifiers) = parse_modifiers(input)?;
-    let (input, name) = ws(take_while(|c| c != ':'))(input)?;
-    let (input, _) = tag(":")(input)?;
-    let (o, type_sig) = take_while(|x| x != '=' && x != '\n')(input)?;
+    let (input, name) = ws(take_while(|c| c != ':')).parse(input)?;
+    let (input, _) = tag(":").parse(input)?;
+    let (o, type_sig) = take_while(|x| x != '=' && x != '\n').parse(input)?;
 
     let mut field = SmaliField {
         name: name.to_string(),
@@ -254,7 +256,7 @@ fn parse_field(smali: &str) -> IResult<&str, SmaliField> {
     let mut input = o;
 
     // Check for initial value
-    let eq = ws(tag("="))(input);
+    let eq = ws(tag::<&str, &str, Error<&str>>("=")).parse(input);
     if let IResult::Ok((o, _)) = eq {
         let (o, iv) = take_until_eol(o)?;
         input = o;
@@ -271,7 +273,7 @@ fn parse_field(smali: &str) -> IResult<&str, SmaliField> {
             let mut found = false;
 
             // Is it the end
-            let end: IResult<&str, &str> = ws(tag(".end field"))(input);
+            let end: IResult<&str, &str> = ws(tag(".end field")).parse(input);
             if let IResult::Ok((o, _)) = end {
                 return Ok((o, field));
             }
@@ -296,15 +298,15 @@ fn parse_field(smali: &str) -> IResult<&str, SmaliField> {
 
 /// Parse a try range in the format "{ <label> .. <label> }"
 pub fn parse_try_range(input: &str) -> IResult<&str, TryRange> {
-    let (input, _) = tag("{")(input)?;
+    let (input, _) = tag("{").parse(input)?;
     let (input, _) = space0(input)?;
     let (input, start) = parse_label(input)?;
     let (input, _) = space1(input)?;
-    let (input, _) = tag("..")(input)?;
+    let (input, _) = tag("..").parse(input)?;
     let (input, _) = space1(input)?;
     let (input, end) = parse_label(input)?;
     let (input, _) = space0(input)?;
-    let (input, _) = tag("}")(input)?;
+    let (input, _) = tag("}").parse(input)?;
     Ok((input, TryRange { start, end }))
 }
 
@@ -312,10 +314,10 @@ pub fn parse_try_range(input: &str) -> IResult<&str, TryRange> {
 /// Example:
 ///   .catch Ljava/lang/Exception; {:try_start_outer .. :try_end_outer} :handler_outer
 pub fn parse_catch_directive(input: &str) -> IResult<&str, CatchDirective> {
-    let (input, _) = tag(".catch")(input)?;
+    let (input, _) = tag(".catch").parse(input)?;
     let (input, _) = space1(input)?;
     // Parse exception type: assume it is non-whitespace until the next space.
-    let (input, exception) = take_while1(|c: char| !c.is_whitespace())(input)?;
+    let (input, exception) = take_while1(|c: char| !c.is_whitespace()).parse(input)?;
     let (input, _) = space1(input)?;
     let (input, try_range) = parse_try_range(input)?;
     let (input, _) = space1(input)?;
@@ -334,7 +336,7 @@ pub fn parse_catch_directive(input: &str) -> IResult<&str, CatchDirective> {
 /// Example:
 ///   .catchall {:try_start .. :try_end} :handler
 pub fn parse_catchall_directive(input: &str) -> IResult<&str, CatchDirective> {
-    let (input, _) = tag(".catchall")(input)?;
+    let (input, _) = tag(".catchall").parse(input)?;
     let (input, _) = space1(input)?;
     let (input, try_range) = parse_try_range(input)?;
     let (input, _) = space1(input)?;
@@ -355,7 +357,8 @@ fn parse_element(input: &str) -> IResult<&str, i64> {
     let (input, _) = opt(preceded(
         multispace0,
         preceded(tag("#"), take_while1(|c| c != '\n')),
-    ))(input)?;
+    ))
+    .parse(input)?;
     Ok((input, value))
 }
 
@@ -369,12 +372,13 @@ fn parse_array_element_with_width(input: &str, width: i32) -> IResult<&str, Arra
     let (input, value): (&str, i64) = parse_literal_int(input)?;
     // Optionally parse a suffix letter.
     let (input, opt_suffix) =
-        opt(alt((char('t'), char('s'), char('l'), char('f'), char('d'))))(input)?;
+        opt(alt((char('t'), char('s'), char('l'), char('f'), char('d')))).parse(input)?;
     // Consume an optional trailing comment (starting with '#').
     let (input, _) = opt(preceded(
         space0,
         preceded(char('#'), take_while1(|c: char| c != '\n')),
-    ))(input)?;
+    ))
+    .parse(input)?;
 
     let element = if let Some(suffix) = opt_suffix {
         match suffix {
@@ -400,17 +404,18 @@ fn parse_array_element_with_width(input: &str, width: i32) -> IResult<&str, Arra
 
 /// Parses the entire .array-data block.
 pub fn parse_array_data(input: &str) -> IResult<&str, ArrayDataDirective> {
-    let (input, _) = tag(".array-data")(input)?;
+    let (input, _) = tag(".array-data").parse(input)?;
     let (input, _) = space1(input)?;
     let (input, width_val): (&str, i32) = parse_literal_int(input)?;
     let element_width = width_val;
-    let (input, _) = opt(newline)(input)?;
+    let (input, _) = opt(newline).parse(input)?;
     let (input, elements) = many0(terminated(
         |i| parse_array_element_with_width(i, element_width),
         opt(newline),
-    ))(input)?;
+    ))
+    .parse(input)?;
     let (input, _) = space0(input)?;
-    let (input, _) = tag(".end array-data")(input)?;
+    let (input, _) = tag(".end array-data").parse(input)?;
     Ok((
         input,
         ArrayDataDirective {
@@ -429,16 +434,17 @@ pub fn parse_array_data(input: &str) -> IResult<&str, ArrayDataDirective> {
 ///     .end packed-switch
 fn parse_packed_switch(input: &str) -> IResult<&str, PackedSwitchDirective> {
     // Parse the header.
-    let (input, _) = tag(".packed-switch")(input)?;
+    let (input, _) = tag(".packed-switch").parse(input)?;
     let (input, _) = space1(input)?;
     let (input, first_key): (&str, i32) = parse_literal_int(input)?;
-    let (input, _) = opt(newline)(input)?; // optional newline
+    let (input, _) = opt(newline).parse(input)?; // optional newline
 
     // Parse one or more target labels.
-    let (input, targets) = many1(preceded(space0, terminated(parse_label, opt(newline))))(input)?;
+    let (input, targets) =
+        many1(preceded(space0, terminated(parse_label, opt(newline)))).parse(input)?;
 
     // Parse the footer.
-    let (input, _) = preceded(space0, tag(".end packed-switch"))(input)?;
+    let (input, _) = preceded(space0, tag(".end packed-switch")).parse(input)?;
     Ok((input, PackedSwitchDirective { first_key, targets }))
 }
 
@@ -448,10 +454,10 @@ fn parse_sparse_switch_entry(input: &str) -> IResult<&str, SparseSwitchEntry> {
     let (input, _) = space0(input)?;
     let (input, key) = parse_literal_int(input)?;
     let (input, _) = space0(input)?;
-    let (input, _) = tag("->")(input)?;
+    let (input, _) = tag("->").parse(input)?;
     let (input, _) = space0(input)?;
     let (input, target) = parse_label(input)?;
-    let (input, _) = opt(newline)(input)?;
+    let (input, _) = opt(newline).parse(input)?;
     Ok((input, SparseSwitchEntry { key, target }))
 }
 
@@ -462,22 +468,22 @@ fn parse_sparse_switch_entry(input: &str) -> IResult<&str, SparseSwitchEntry> {
 ///         0x4 -> :case_4
 ///     .end sparse-switch
 fn parse_sparse_switch(input: &str) -> IResult<&str, SparseSwitchDirective> {
-    let (input, _) = tag(".sparse-switch")(input)?;
-    let (input, _) = opt(space1)(input)?;
-    let (input, _) = opt(newline)(input)?;
-    let (input, entries) = many0(parse_sparse_switch_entry)(input)?;
-    let (input, _) = preceded(space0, tag(".end sparse-switch"))(input)?;
+    let (input, _) = tag(".sparse-switch").parse(input)?;
+    let (input, _) = opt(space1).parse(input)?;
+    let (input, _) = opt(newline).parse(input)?;
+    let (input, entries) = many0(parse_sparse_switch_entry).parse(input)?;
+    let (input, _) = preceded(space0, tag(".end sparse-switch")).parse(input)?;
     Ok((input, SparseSwitchDirective { entries }))
 }
 
 fn parse_instruction(smali: &str) -> IResult<&str, SmaliInstruction> {
     // Line
-    if let IResult::Ok((o, _)) = ws(tag(".line"))(smali) {
+    if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".line")).parse(smali) {
         let (o, n) = take_until_eol(o)?;
         IResult::Ok((o, SmaliInstruction::Line(n.parse::<u32>().unwrap())))
     }
     // Label
-    else if let IResult::Ok((o, _)) = ws(tag(":"))(smali) {
+    else if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(":")).parse(smali) {
         let (o, n) = take_until_eol(o)?;
         IResult::Ok((o, SmaliInstruction::Label(Label(n.to_string()))))
     }
@@ -515,21 +521,30 @@ fn parse_instruction(smali: &str) -> IResult<&str, SmaliInstruction> {
     }
 }
 
-/// Parses a .param block with potential annotations
 fn parse_param_block(input: &str) -> IResult<&str, ()> {
-    let (input, _) = tag(".param")(input)?;
-    let (input, _) = take_until_eol(input)?; // Skip parameter declaration
+    let (input, _) = tag(".param").parse(input)?;
+    let (input, _) = take_until_eol(input)?;
 
     let mut input = input;
 
-    // Parse potential annotations inside .param
-    while let IResult::Ok((i, _)) = parse_annotation(input, true) {
+    loop {
+        if let Ok((i, _)) = ws(tag::<&str, &str, Error<&str>>(".end param")).parse(input) {
+            return Ok((i, ()));
+        }
+
+        if let Ok((i, _)) = parse_annotation(input, false) {
+            input = i;
+            continue;
+        }
+
+        if let Ok((i, _)) = parse_annotation(input, true) {
+            input = i;
+            continue;
+        }
+
+        let (i, _) = take_until_eol(input)?;
         input = i;
     }
-
-    // Parse .end param
-    let (input, _) = ws(tag(".end param"))(input)?;
-    Ok((input, ()))
 }
 
 pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
@@ -539,24 +554,27 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
     let mut input = o;
 
     // Is it a class initializer or constructor
-    let constructor = if let IResult::Ok((o, _)) = ws(tag("constructor "))(input) {
+    let constructor = if let IResult::Ok((o, _)) =
+        ws(tag::<&str, &str, Error<&str>>("constructor ")).parse(input)
+    {
         input = o;
         true
     } else {
         false
     };
 
-    let (o, name) = take_while(|c| c != '(')(input)?;
+    let (o, name) = take_while(|c| c != '(').parse(input)?;
     let (o, ms) = parse_methodsignature(o)?;
-    let (o, _) = pair(space0, newline)(o)?;
+    let (o, _) = pair(space0, newline).parse(o)?;
 
     // Parse potential .locals directive
-    let locals_input = if let IResult::Ok((o, _)) = ws(tag(".locals"))(o) {
-        let (o, local_count) = take_until_eol(o)?;
-        o
-    } else {
-        o
-    };
+    let locals_input =
+        if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".locals")).parse(o) {
+            let (o, local_count) = take_until_eol(o)?;
+            o
+        } else {
+            o
+        };
 
     let mut method = SmaliMethod {
         name: name.to_string(),
@@ -581,7 +599,8 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         }
 
         // End of method
-        if let IResult::Ok((o, _)) = ws(tag(".end method"))(input) {
+        if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".end method")).parse(input)
+        {
             return Ok((o, method));
         }
 
@@ -599,7 +618,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         }
 
         // .locals directive
-        if let IResult::Ok((o, _)) = ws(tag(".locals"))(input) {
+        if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".locals")).parse(input) {
             let (o, local_count) = take_until_eol(o)?;
             method.locals = local_count.parse::<u32>().unwrap_or(0);
             input = o;
@@ -608,12 +627,13 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
 
         // Other common directives (prologue, line, registers, etc.)
         if let IResult::Ok((o, _)) = alt((
-            ws(tag(".prologue")),
-            ws(tag(".line")),
-            ws(tag(".registers")),
-            ws(tag(".local")),
-            ws(tag(".restart local")),
-        ))(input)
+            ws(tag::<&str, &str, Error<&str>>(".prologue")),
+            ws(tag::<&str, &str, Error<&str>>(".line")),
+            ws(tag::<&str, &str, Error<&str>>(".registers")),
+            ws(tag::<&str, &str, Error<&str>>(".local")),
+            ws(tag::<&str, &str, Error<&str>>(".restart local")),
+        ))
+        .parse(input)
         {
             // Skip the rest of the line
             let (o, _) = take_until_eol(o)?;
@@ -634,7 +654,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         if !found {
             let next_lines = input.lines().take(3).collect::<Vec<_>>();
             let context = next_lines.join("\n");
-            panic!("parse_method: unable to parse method body at:\n{}", context);
+            panic!("parse_method: unable to parse method body at:\n{context}");
         }
     }
 }
@@ -759,15 +779,21 @@ mod tests {
 
     #[test]
     fn test_quoted() {
-        let (_, l) = quoted()("\"test this\"\n").unwrap();
+        let (_, l) = quoted::<Error<&str>>().parse("\"test this\"\n").unwrap();
         assert_eq!(l, "test this");
-        let (_, l) = quoted()("\"test\\\" this\"\n").unwrap();
+        let (_, l) = quoted::<Error<&str>>()
+            .parse("\"test\\\" this\"\n")
+            .unwrap();
         assert_eq!(l, "test\\\" this");
-        let (_, l) = quoted()("\"\\u0008\\u001f\\u0010!R\\u0013\\u0010\\\"\\u001a\"").unwrap();
+        let (_, l) = quoted::<Error<&str>>()
+            .parse("\"\\u0008\\u001f\\u0010!R\\u0013\\u0010\\\"\\u001a\"")
+            .unwrap();
         assert_eq!(l, "\\u0008\\u001f\\u0010!R\\u0013\\u0010\\\"\\u001a");
-        let (_, l) = quoted()("\"a\\nb\\rc\\t \\u0008 'boo' \\\"d\\\" \\f\"").unwrap();
+        let (_, l) = quoted::<Error<&str>>()
+            .parse("\"a\\nb\\rc\\t \\u0008 'boo' \\\"d\\\" \\f\"")
+            .unwrap();
         assert_eq!(l, "a\\nb\\rc\\t \\u0008 'boo' \\\"d\\\" \\f");
-        let (_, a) = quoted()("\"\\\\J\"").unwrap();
+        let (_, a) = quoted::<Error<&str>>().parse("\"\\\\J\"").unwrap();
         assert_eq!(a, "\\\\J");
     }
 
