@@ -2540,6 +2540,28 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "sparse-switch" => one_reg_label_case!(SparseSwitch, input),
         "fill-array-data" => one_reg_label_case!(FillArrayData, input),
 
+        // Arrays
+        "filled-new-array" => {
+            let (input, _) = space1(input)?;
+            let (input, registers) = parse_register_list(input)?;
+            let (input, _) = delimited(space0, char(','), space0)(input)?;
+            let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
+            Ok((input, DexInstruction::FilledNewArray { registers, class }))
+        }
+        "filled-new-array/range" => {
+            let (input, _) = space1(input)?;
+            let (input, range) = parse_register_range(input)?;
+            let (input, _) = delimited(space0, char(','), space0)(input)?;
+            let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
+            Ok((
+                input,
+                DexInstruction::FilledNewArrayRange {
+                    registers: range,
+                    class,
+                },
+            ))
+        }
+
         // Two regs & label
         "if-eq" => two_reg_label_case!(IfEq, input),
         "if-ne" => two_reg_label_case!(IfNe, input),
@@ -2661,5 +2683,36 @@ mod tests {
         let (_, i): (_, i32) = parse_literal_int("-0x80000000").unwrap();
         let sixteen: i16 = (i >> 16) as i16;
         assert_eq!(sixteen, -0x8000);
+    }
+
+    #[test]
+    fn test_filled_new_array() {
+        let input = "filled-new-array {v0, v1}, Ljava/lang/String;";
+        let (rest, instr) = parse_instruction(input).unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(
+            instr,
+            DexInstruction::FilledNewArray {
+                registers: vec![v(0), v(1)],
+                class: "Ljava/lang/String;".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_filled_new_array_range() {
+        let input = "filled-new-array/range {v0 .. v2}, [I";
+        let (rest, instr) = parse_instruction(input).unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(
+            instr,
+            DexInstruction::FilledNewArrayRange {
+                registers: RegisterRange {
+                    start: v(0),
+                    end: v(2)
+                },
+                class: "[I".to_string()
+            }
+        );
     }
 }
