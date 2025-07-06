@@ -567,15 +567,6 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
     let (o, ms) = parse_methodsignature(o)?;
     let (o, _) = pair(space0, newline).parse(o)?;
 
-    // Parse potential .locals directive
-    let locals_input =
-        if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".locals")).parse(o) {
-            let (o, local_count) = take_until_eol(o)?;
-            o
-        } else {
-            o
-        };
-
     let mut method = SmaliMethod {
         name: name.to_string(),
         constructor,
@@ -586,7 +577,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         instructions: vec![],
     };
 
-    let mut input = locals_input;
+    let mut input = o;
 
     // Main loop for parsing method body directives and content
     loop {
@@ -612,7 +603,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         }
 
         // .param directive with potential annotations
-        if let IResult::Ok((o, _)) = parse_param_block(input) {
+        if let IResult::Ok((o, _)) = ws(parse_param_block).parse(input) {
             input = o;
             found = true;
         }
@@ -620,7 +611,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         // .locals directive
         if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".locals")).parse(input) {
             let (o, local_count) = take_until_eol(o)?;
-            method.locals = local_count.parse::<u32>().unwrap_or(0);
+            method.locals = local_count.trim().parse::<u32>().unwrap();
             input = o;
             found = true;
         }
@@ -947,27 +938,39 @@ mod tests {
     }
 
     #[test]
-    fn test_method_with_param_annotation() {
-        let smali = r#"
-    .method private static final isInitialized(Lkotlin/reflect/KProperty0;)Z
-        .param p0    # Lkotlin/reflect/KProperty0;
+    fn test_parse_param_block_with_annotation() {
+        let input = r#".param p0    # Lkotlin/reflect/KProperty0;
             .annotation build Lkotlin/internal/AccessibleLateinitPropertyLiteral;
             .end annotation
-        .end param
-        .annotation system Ldalvik/annotation/Signature;
-            value = {
-                "(",
-                "Lkotlin/reflect/KProperty0<",
-                "*>;)Z"
-            }
-        .end annotation
+        .end param"#;
+        let (rem, _) = parse_param_block(input).unwrap();
+        assert!(rem.is_empty());
+    }
 
-        .locals 1
-        new-instance p0, Lkotlin/NotImplementedError;
-        const-string v0, "Implementation is intrinsic"
-        invoke-direct {p0, v0}, Lkotlin/NotImplementedError;-><init>(Ljava/lang/String;)V
-        throw p0
-    .end method
+    #[test]
+    fn test_method_with_param_annotation() {
+        let smali = r#".method private static final isInitialized(Lkotlin/reflect/KProperty0;)Z
+    .locals 1
+    .param p0    # Lkotlin/reflect/KProperty0;
+        .annotation build Lkotlin/internal/AccessibleLateinitPropertyLiteral;
+        .end annotation
+    .end param
+    .annotation system Ldalvik/annotation/Signature;
+        value = {
+            "(",
+            "Lkotlin/reflect/KProperty0<",
+            "*>;)Z"
+        }
+    .end annotation
+
+    new-instance p0, Lkotlin/NotImplementedError;
+
+    const-string v0, "Implementation is intrinsic"
+
+    invoke-direct {p0, v0}, Lkotlin/NotImplementedError;-><init>(Ljava/lang/String;)V
+
+    throw p0
+.end method
     "#;
 
         let (rem, method) = parse_method(smali).unwrap();
