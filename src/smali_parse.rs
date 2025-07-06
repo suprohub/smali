@@ -515,13 +515,30 @@ fn parse_instruction(smali: &str) -> IResult<&str, SmaliInstruction> {
     }
 }
 
-fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
+/// Parses a .param block with potential annotations
+fn parse_param_block(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag(".param")(input)?;
+    let (input, _) = take_until_eol(input)?; // Skip parameter declaration
+
+    let mut input = input;
+
+    // Parse potential annotations inside .param
+    while let IResult::Ok((i, _)) = parse_annotation(input, true) {
+        input = i;
+    }
+
+    // Parse .end param
+    let (input, _) = ws(tag(".end param"))(input)?;
+    Ok((input, ()))
+}
+
+pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
     let (input, _) = tag(".method")(smali)?;
     let (o, modifiers) = parse_modifiers(input)?;
 
     let mut input = o;
 
-    // Is it a class initialiser or constructor
+    // Is it a class initializer or constructor
     let constructor = if let IResult::Ok((o, _)) = ws(tag("constructor "))(input) {
         input = o;
         true
@@ -531,18 +548,14 @@ fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
 
     let (o, name) = take_while(|c| c != '(')(input)?;
     let (o, ms) = parse_methodsignature(o)?;
-
     let (o, _) = pair(space0, newline)(o)?;
 
-    // locals
-    let l = ws(tag(".locals"))(o);
-    let locals = if let IResult::Ok((o, _)) = l {
-        let (o, local) = take_until_eol(o)?;
-        input = o;
-        local
+    // Parse potential .locals directive
+    let locals_input = if let IResult::Ok((o, _)) = ws(tag(".locals"))(o) {
+        let (o, local_count) = take_until_eol(o)?;
+        o
     } else {
-        input = o;
-        "0"
+        o
     };
 
     let mut method = SmaliMethod {
@@ -550,70 +563,78 @@ fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         constructor,
         modifiers,
         signature: ms,
-        locals: locals.parse::<u32>().unwrap(),
+        locals: 0, // Will be set later
         annotations: vec![],
         instructions: vec![],
     };
 
-    // Check for any annotations
-    if let IResult::Ok((o, a)) = parse_annotation(input, false) {
-        method.annotations.push(a);
-        input = o;
+    let mut input = locals_input;
 
-        loop {
-            let mut found = false;
-
-            // Is it the end
-            let end: IResult<&str, &str> = ws(tag(".end method"))(input);
-            if let IResult::Ok((o, _)) = end {
-                return Ok((o, method));
-            }
-
-            if let IResult::Ok((o, a)) = parse_annotation(input, false) {
-                method.annotations.push(a);
-                input = o;
-                found = true;
-            }
-
-            // Can't parse this - move on to instructions
-            if !found {
-                break;
-            }
-        }
-    }
-
-    // Now parse the instructions
+    // Main loop for parsing method body directives and content
     loop {
         let mut found = false;
 
-        // Try a blank line
+        // Blank lines
         if let IResult::Ok((o, _)) = blank_line(input) {
             input = o;
             found = true;
         }
 
-        // Is it the end
-        let end: IResult<&str, &str> = ws(tag(".end method"))(input);
-        if let IResult::Ok((o, _)) = end {
+        // End of method
+        if let IResult::Ok((o, _)) = ws(tag(".end method"))(input) {
             return Ok((o, method));
         }
 
-        if let IResult::Ok((o, i)) = parse_instruction(input) {
-            method.instructions.push(i);
+        // Annotations on the method
+        if let IResult::Ok((o, a)) = parse_annotation(input, false) {
+            method.annotations.push(a);
             input = o;
             found = true;
         }
 
-        // Can't parse this - error
+        // .param directive with potential annotations
+        if let IResult::Ok((o, _)) = parse_param_block(input) {
+            input = o;
+            found = true;
+        }
+
+        // .locals directive
+        if let IResult::Ok((o, _)) = ws(tag(".locals"))(input) {
+            let (o, local_count) = take_until_eol(o)?;
+            method.locals = local_count.parse::<u32>().unwrap_or(0);
+            input = o;
+            found = true;
+        }
+
+        // Other common directives (prologue, line, registers, etc.)
+        if let IResult::Ok((o, _)) = alt((
+            ws(tag(".prologue")),
+            ws(tag(".line")),
+            ws(tag(".registers")),
+            ws(tag(".local")),
+            ws(tag(".restart local")),
+        ))(input)
+        {
+            // Skip the rest of the line
+            let (o, _) = take_until_eol(o)?;
+            input = o;
+            found = true;
+        }
+
+        // Try to parse instructions if nothing else matches
         if !found {
-            let mut lines = input.lines().take(3);
-            panic!(
-                "parse_method: unable to parse `{}\n{}\n{}\n`",
-                lines.next().unwrap(),
-                lines.next().unwrap(),
-                lines.next().unwrap()
-            );
-            //return IResult::Err(Failure(Error { input: input, code: ErrorKind::Fail }));
+            if let IResult::Ok((o, i)) = parse_instruction(input) {
+                method.instructions.push(i);
+                input = o;
+                found = true;
+            }
+        }
+
+        // If nothing was parsed, show error with context
+        if !found {
+            let next_lines = input.lines().take(3).collect::<Vec<_>>();
+            let context = next_lines.join("\n");
+            panic!("parse_method: unable to parse method body at:\n{}", context);
         }
     }
 }
@@ -897,5 +918,38 @@ mod tests {
                              .end array-data"#;
         let ad = parse_array_data(input).unwrap();
         println!("{ad:?}");
+    }
+
+    #[test]
+    fn test_method_with_param_annotation() {
+        let smali = r#"
+    .method private static final isInitialized(Lkotlin/reflect/KProperty0;)Z
+        .param p0    # Lkotlin/reflect/KProperty0;
+            .annotation build Lkotlin/internal/AccessibleLateinitPropertyLiteral;
+            .end annotation
+        .end param
+        .annotation system Ldalvik/annotation/Signature;
+            value = {
+                "(",
+                "Lkotlin/reflect/KProperty0<",
+                "*>;)Z"
+            }
+        .end annotation
+
+        .locals 1
+        new-instance p0, Lkotlin/NotImplementedError;
+        const-string v0, "Implementation is intrinsic"
+        invoke-direct {p0, v0}, Lkotlin/NotImplementedError;-><init>(Ljava/lang/String;)V
+        throw p0
+    .end method
+    "#;
+
+        let (rem, method) = parse_method(smali).unwrap();
+        assert!(rem.is_empty());
+        assert_eq!(method.name, "isInitialized");
+        assert_eq!(method.annotations.len(), 1); // Signature annotation
+        assert_eq!(method.instructions.len(), 4);
+        assert_eq!(method.locals, 1);
+        assert_eq!(method.modifiers.len(), 3); // private, static, final
     }
 }
