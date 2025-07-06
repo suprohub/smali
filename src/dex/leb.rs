@@ -1,5 +1,3 @@
-
-
 pub(crate) fn encode_uleb128(value: u32) -> Vec<u8> {
     let mut result = Vec::new();
     let mut remaining = value;
@@ -49,7 +47,8 @@ pub(crate) fn encode_sleb128(value: i32) -> Vec<u8> {
         let mut byte = (remaining & 0x7F) as u8;
         remaining >>= 7;
 
-        let is_more = !((remaining == 0 && (byte & 0x40) == 0) || (remaining == -1 && (byte & 0x40) != 0));
+        let is_more =
+            !((remaining == 0 && (byte & 0x40) == 0) || (remaining == -1 && (byte & 0x40) != 0));
         if is_more {
             byte |= 0x80;
         }
@@ -63,8 +62,6 @@ pub(crate) fn encode_sleb128(value: i32) -> Vec<u8> {
 
     result
 }
-
-
 
 pub(crate) fn decode_sleb128(encoded: &[u8]) -> (i32, usize) {
     let mut value = 0;
@@ -95,7 +92,6 @@ pub(crate) fn decode_uleb128p1(encoded: &[u8]) -> (i32, usize) {
     let (v, c) = decode_uleb128(encoded);
     (v as i32 - 1, c)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -166,4 +162,3 @@ mod tests {
         }
     }
 }
-

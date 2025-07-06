@@ -1,6 +1,5 @@
 //! Representation of the Dalvik bytecodes
 
-
 /*
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 enum FormatID {

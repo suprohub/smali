@@ -1,6 +1,6 @@
 use bitflags::bitflags;
-use rangemap::{RangeInclusiveMap};
-use std::ops::{ RangeBounds, RangeInclusive };
+use rangemap::RangeInclusiveMap;
+use std::ops::{RangeBounds, RangeInclusive};
 
 /// Represents different types of references used by opcodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +51,6 @@ pub struct VersionConstraint {
 }
 
 impl Opcode {
-
     /// Creates a new Opcode instance.
     pub(crate) fn new(
         version_constraints: Vec<VersionConstraint>,
@@ -92,16 +91,15 @@ impl Opcode {
         version_constraints: Vec<VersionConstraint>,
         name: &'static str,
         reference_type: ReferenceType,
-        format: Format
-    ) -> Self
-    {
+        format: Format,
+    ) -> Self {
         Opcode::new(
             version_constraints,
             name,
             reference_type,
             None,
             format,
-            OpcodeFlags::empty()
+            OpcodeFlags::empty(),
         )
     }
 
@@ -124,7 +122,11 @@ impl Opcode {
     }
 
     /// Helper function similar to Java's `betweenApi`.
-    pub(crate) fn between_api(opcode_value: u16, min_api: i32, max_api: i32) -> Vec<VersionConstraint> {
+    pub(crate) fn between_api(
+        opcode_value: u16,
+        min_api: i32,
+        max_api: i32,
+    ) -> Vec<VersionConstraint> {
         vec![VersionConstraint {
             api_range: Some(min_api..=max_api),
             art_version_range: None,
@@ -178,7 +180,10 @@ impl Opcode {
     }
 
     /// Combines multiple vectors of `VersionConstraint` into one.
-    pub(crate) fn combine(constraints: Vec<VersionConstraint>, other: Vec<VersionConstraint>) -> Vec<VersionConstraint> {
+    pub(crate) fn combine(
+        constraints: Vec<VersionConstraint>,
+        other: Vec<VersionConstraint>,
+    ) -> Vec<VersionConstraint> {
         let mut combined = constraints;
         combined.extend(other);
         combined
