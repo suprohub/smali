@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::smali_instructions::parse_instruction as parse_dex_instruction;
 use crate::smali_instructions::{Label, parse_label, parse_literal_int};
 use crate::types::*;
@@ -70,7 +72,7 @@ fn parse_modifiers(smali: &str) -> IResult<&str, Vec<Modifier>> {
     .parse(smali)?;
     let mut v = vec![];
     for m in mods {
-        v.push(Modifier::from_str(m.trim()));
+        v.push(Modifier::from_str(m.trim()).unwrap());
     }
     IResult::Ok((input, v))
 }
@@ -78,7 +80,7 @@ fn parse_modifiers(smali: &str) -> IResult<&str, Vec<Modifier>> {
 fn parse_visibility(smali: &str) -> IResult<&str, AnnotationVisibility> {
     let (input, visibility) =
         alt((ws(tag("build")), ws(tag("runtime")), ws(tag("system")))).parse(smali)?;
-    IResult::Ok((input, AnnotationVisibility::from_str(visibility)))
+    IResult::Ok((input, AnnotationVisibility::from_str(visibility).unwrap()))
 }
 
 fn take_until_eol(s: &str) -> IResult<&str, &str> {
@@ -344,24 +346,6 @@ pub fn parse_catchall_directive(input: &str) -> IResult<&str, CatchDirective> {
     Ok((input, CatchDirective::CatchAll { try_range, handler }))
 }
 
-/// Helper: returns true for valid hexadecimal digit characters.
-fn is_hex_digit(c: char) -> bool {
-    c.is_ascii_hexdigit()
-}
-
-/// Parse a single array element and skip any trailing comment.
-/// Example element: "0x3f800000    # 1.0f"
-fn parse_element(input: &str) -> IResult<&str, i64> {
-    let (input, value) = parse_literal_int(input)?;
-    // Optionally consume trailing whitespace and a comment starting with '#'
-    let (input, _) = opt(preceded(
-        multispace0,
-        preceded(tag("#"), take_while1(|c| c != '\n')),
-    ))
-    .parse(input)?;
-    Ok((input, value))
-}
-
 /// Parses a single array-data element given the element width from the header.
 /// The literal is parsed, then an optional suffix is parsed. If no suffix is found,
 /// we default based on the width:
@@ -521,23 +505,47 @@ fn parse_instruction(smali: &str) -> IResult<&str, SmaliInstruction> {
     }
 }
 
-fn parse_param_block(input: &str) -> IResult<&str, ()> {
-    let (input, _) = tag(".param").parse(input)?;
+fn parse_param_block(input: &str) -> IResult<&str, SmaliParam> {
+    let (input, _) = tag(".param")(input)?;
+    let (input, _) = space1(input)?;
+
+    // Parse register and optional name
+    let (input, register) = take_while1(|c: char| !c.is_whitespace() && c != ',')(input)?;
+    let (input, name) = opt(preceded(
+        pair(space0, char(',')),
+        preceded(space0, quoted()),
+    ))
+    .parse(input)?;
+
+    // Skip type comment if present
+    let (input, _) = opt(preceded(
+        space0,
+        preceded(char('#'), take_while1(|c| c != '\n')),
+    ))
+    .parse(input)?;
     let (input, _) = take_until_eol(input)?;
+
+    let mut param = SmaliParam {
+        register: register.to_string(),
+        name: name.map(|s| s.to_string()),
+        annotations: vec![],
+    };
 
     let mut input = input;
 
     loop {
         if let Ok((i, _)) = ws(tag::<&str, &str, Error<&str>>(".end param")).parse(input) {
-            return Ok((i, ()));
+            return Ok((i, param));
         }
 
-        if let Ok((i, _)) = parse_annotation(input, false) {
+        if let Ok((i, a)) = parse_annotation(input, false) {
+            param.annotations.push(a);
             input = i;
             continue;
         }
 
-        if let Ok((i, _)) = parse_annotation(input, true) {
+        if let Ok((i, a)) = parse_annotation(input, true) {
+            param.annotations.push(a);
             input = i;
             continue;
         }
@@ -573,6 +581,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         modifiers,
         signature: ms,
         locals: 0, // Will be set later
+        params: vec![],
         annotations: vec![],
         instructions: vec![],
     };
@@ -602,8 +611,9 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
             found = true;
         }
 
-        // .param directive with potential annotations
-        if let IResult::Ok((o, _)) = ws(parse_param_block).parse(input) {
+        // .param directive
+        if let IResult::Ok((o, param)) = ws(parse_param_block).parse(input) {
+            method.params.push(param);
             input = o;
             found = true;
         }

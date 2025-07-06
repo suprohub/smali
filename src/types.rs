@@ -1,11 +1,6 @@
 /* Struct to represent a java object type identifer e.g. java.lang.Object */
 /* They are stored in the smali native (also JNI) format e.g. Ljava/lang/Object; */
 
-use crate::dex::dex_file::{
-    ACC_ABSTRACT, ACC_ANNOTATION, ACC_BRIDGE, ACC_CONSTRUCTOR, ACC_DECLARED_SYNCHRONIZED, ACC_ENUM,
-    ACC_FINAL, ACC_INTERFACE, ACC_NATIVE, ACC_PRIVATE, ACC_PROTECTED, ACC_PUBLIC, ACC_STATIC,
-    ACC_STRICT, ACC_SYNCHRONIZED, ACC_SYNTHETIC, ACC_TRANSIENT, ACC_VARARGS, ACC_VOLATILE,
-};
 use crate::smali_instructions::{DexInstruction, Label};
 use crate::smali_parse::parse_class;
 use crate::smali_write::write_class;
@@ -21,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::{fmt, fs};
 
 /* Custom error for our command helper */
@@ -471,9 +467,10 @@ pub enum Modifier {
     DeclaredSynchronized,
 }
 
-impl Modifier {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for Modifier {
+    type Err = SmaliError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "public" => Self::Public,
             "protected" => Self::Protected,
             "private" => Self::Private,
@@ -492,10 +489,16 @@ impl Modifier {
             "strict" => Self::Static,
             "bridge" => Self::Bridge,
             "constructor" => Self::Constructor,
-            _ => Self::Public, // todo: Fix this
-        }
+            _ => {
+                return Err(SmaliError {
+                    details: "Unknown modifier".to_string(),
+                });
+            }
+        })
     }
+}
 
+impl Modifier {
     pub fn to_str(&self) -> &str {
         match self {
             Self::Public => "public",
@@ -518,72 +521,6 @@ impl Modifier {
             Self::Constructor => "constructor",
             Self::DeclaredSynchronized => "synchronized",
         }
-    }
-}
-
-pub struct Modifiers;
-
-impl Modifiers {
-    pub fn from_u32(u: u32) -> Vec<Modifier> {
-        let mut m = vec![];
-        if u & ACC_PUBLIC > 0 {
-            m.push(Modifier::Public)
-        };
-        if u & ACC_PRIVATE > 0 {
-            m.push(Modifier::Private)
-        };
-        if u & ACC_PROTECTED > 0 {
-            m.push(Modifier::Protected)
-        };
-        if u & ACC_STATIC > 0 {
-            m.push(Modifier::Static)
-        };
-        if u & ACC_FINAL > 0 {
-            m.push(Modifier::Final)
-        };
-        if u & ACC_SYNCHRONIZED > 0 {
-            m.push(Modifier::Synchronized)
-        };
-        if u & ACC_VOLATILE > 0 {
-            m.push(Modifier::Volatile)
-        };
-        if u & ACC_BRIDGE > 0 {
-            m.push(Modifier::Bridge)
-        };
-        if u & ACC_TRANSIENT > 0 {
-            m.push(Modifier::Transient)
-        };
-        if u & ACC_VARARGS > 0 {
-            m.push(Modifier::Varargs)
-        };
-        if u & ACC_NATIVE > 0 {
-            m.push(Modifier::Native)
-        };
-        if u & ACC_INTERFACE > 0 {
-            m.push(Modifier::Interface)
-        };
-        if u & ACC_ABSTRACT > 0 {
-            m.push(Modifier::Abstract)
-        };
-        if u & ACC_STRICT > 0 {
-            m.push(Modifier::Strict)
-        };
-        if u & ACC_SYNTHETIC > 0 {
-            m.push(Modifier::Synthetic)
-        };
-        if u & ACC_ANNOTATION > 0 {
-            m.push(Modifier::Annotation)
-        };
-        if u & ACC_ENUM > 0 {
-            m.push(Modifier::Enum)
-        };
-        if u & ACC_CONSTRUCTOR > 0 {
-            m.push(Modifier::Constructor)
-        };
-        if u & ACC_DECLARED_SYNCHRONIZED > 0 {
-            m.push(Modifier::DeclaredSynchronized)
-        };
-        m
     }
 }
 
@@ -616,13 +553,19 @@ pub enum AnnotationValue {
     Enum(ObjectIdentifier, String),
 }
 
-impl AnnotationVisibility {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for AnnotationVisibility {
+    type Err = SmaliError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "build" => Self::Build,
             "system" => Self::System,
-            _ => Self::Runtime,
-        }
+            _ => {
+                return Err(SmaliError {
+                    details: "Unknown Annotation visibility".to_string(),
+                });
+            }
+        })
     }
 }
 
@@ -818,6 +761,17 @@ pub enum SmaliInstruction {
     SparseSwitch(SparseSwitchDirective),
 }
 
+/// Struct representing a method parameter
+#[derive(Debug)]
+pub struct SmaliParam {
+    /// Parameter name
+    pub name: Option<String>,
+    /// Register used for the parameter
+    pub register: String,
+    /// Parameter annotations
+    pub annotations: Vec<SmaliAnnotation>,
+}
+
 /// Struct representing a Java method
 ///
 #[derive(Debug)]
@@ -832,6 +786,8 @@ pub struct SmaliMethod {
     pub signature: MethodSignature,
     /// Number of local variables required by the instructions
     pub locals: u32,
+    /// Method params
+    pub params: Vec<SmaliParam>,
     /// Any method level annotations
     pub annotations: Vec<SmaliAnnotation>,
     /// Method instructions
@@ -996,7 +952,7 @@ impl SmaliClass {
         let class_name = self.name.as_java_type();
         let package_dirs: Vec<&str> = class_name.split('.').collect();
         let mut dir = PathBuf::from(path);
-        for p in package_dirs[0..package_dirs.len() - 1].to_vec() {
+        for p in package_dirs[0..package_dirs.len() - 1].iter().copied() {
             dir.push(p);
             if !dir.exists() {
                 let _ = fs::create_dir(&dir);

@@ -1903,12 +1903,6 @@ fn parse_const_wide_high16(input: &str) -> IResult<&str, DexInstruction> {
     Ok((input, DexInstruction::ConstWideHigh16 { dest, value }))
 }
 
-fn parse_unused(input: &str) -> IResult<&str, DexInstruction> {
-    let (input, opcode_str) = alphanumeric1(input)?;
-    let opcode = u8::from_str_radix(opcode_str, 16).unwrap_or(0);
-    Ok((input, DexInstruction::Unused { opcode }))
-}
-
 /// Parses a register range enclosed in braces, e.g. "{v0 .. v6}".
 /// Returns a tuple (first_reg, last_reg)
 fn parse_register_range(input: &str) -> IResult<&str, RegisterRange> {
