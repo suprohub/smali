@@ -2,7 +2,7 @@
 
 A pure rust implementation of a parser, writer and set of types for the smali file format.
 
-Smali is used in the Android reversing community to examine and modify Android APK files. It's a human readable text format that represents the complete structure of a Dex VM class including all of its instructions. 
+Smali is used in the Android reversing community to examine and modify Android APK files. It's a human readable text format that represents the complete structure of a Dex VM class including all of its operations. 
 
 With this crate you can use it in conjunction with [apktool](https://ibotpeaches.github.io/Apktool/) to perform analysis and/or patches to Android applications. 
 
@@ -34,10 +34,10 @@ fn process_apk(apk_file: &str) -> Result<(), Box<dyn Error>>
             {
                 if m.signature.result == TypeSignature::Bool && m.signature.args.len() == 0
                 {
-                    let mut new_instructions = vec![];
-                    new_instructions.push(Instruction(DexInstruction::Const4 { dest: v(0), value: 0 }));  // "const/4 v0, 0x0" - Set v0 to false
-                    new_instructions.push(Instruction(DexInstruction::Return { src: v(0) }));  //  "return v0" - return v0
-                    m.instructions = new_instructions;
+                    let mut new_operations = vec![];
+                    new_operations.push(Op(DexOp::Const4 { dest: v(0), value: 0 }));  // "const/4 v0, 0x0" - Set v0 to false
+                    new_operations.push(Op(DexOp::Return { src: v(0) }));  //  "return v0" - return v0
+                    m.operations = new_operations;
                     m.locals = 1;
                     println!("{} method {} successfully patched.", c.name.as_java_type(), &m.name);
                 }

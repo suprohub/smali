@@ -1,7 +1,7 @@
 /* Struct to represent a java object type identifer e.g. java.lang.Object */
 /* They are stored in the smali native (also JNI) format e.g. Ljava/lang/Object; */
 
-use crate::smali_instructions::{DexInstruction, Label};
+use crate::smali_ops::{DexOp, Label};
 use crate::smali_parse::parse_class;
 use crate::smali_write::write_class;
 use nom::Err::Failure;
@@ -749,13 +749,13 @@ impl fmt::Display for SparseSwitchDirective {
     }
 }
 
-/// An enum representing instructions within a method, these can be a label, a line number or a dex instruction as a String.
+/// An enum representing operations within a method, these can be a label, a line number or a dex operation as a String.
 ///
 #[derive(Debug)]
-pub enum SmaliInstruction {
+pub enum SmaliOp {
     Label(Label),
     Line(u32),
-    Instruction(DexInstruction),
+    Op(DexOp),
     Catch(CatchDirective),
     ArrayData(ArrayDataDirective),
     PackedSwitch(PackedSwitchDirective),
@@ -785,14 +785,14 @@ pub struct SmaliMethod {
     pub constructor: bool,
     /// Method signature
     pub signature: MethodSignature,
-    /// Number of local variables required by the instructions
+    /// Number of local variables required by the operations
     pub locals: u32,
     /// Method params
     pub params: Vec<SmaliParam>,
     /// Any method level annotations
     pub annotations: Vec<SmaliAnnotation>,
-    /// Method instructions
-    pub instructions: Vec<SmaliInstruction>,
+    /// Method operations
+    pub ops: Vec<SmaliOp>,
 }
 
 /// Represents a smali class i.e. the whole .smali file

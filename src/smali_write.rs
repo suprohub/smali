@@ -1,6 +1,4 @@
-use crate::types::{
-    AnnotationValue, Modifier, SmaliAnnotation, SmaliClass, SmaliInstruction, SmaliMethod,
-};
+use crate::types::{AnnotationValue, Modifier, SmaliAnnotation, SmaliClass, SmaliMethod, SmaliOp};
 
 fn write_modifiers(mods: &Vec<Modifier>) -> String {
     let mut out = "".to_string();
@@ -81,7 +79,7 @@ fn write_method(method: &SmaliMethod) -> String {
         out.push_str("constructor ");
     }
     out.push_str(&format!("{}{}\n", method.name, method.signature.to_jni()));
-    if !method.instructions.is_empty() {
+    if !method.ops.is_empty() {
         out.push_str(&format!("    .locals {:}\n", method.locals));
     }
 
@@ -89,27 +87,27 @@ fn write_method(method: &SmaliMethod) -> String {
         out.push_str(&write_annotation(a, false, true));
     }
 
-    for i in &method.instructions {
+    for i in &method.ops {
         match i {
-            SmaliInstruction::Line(l) => {
+            SmaliOp::Line(l) => {
                 out.push_str(&format!("    .line {l:}\n"));
             }
-            SmaliInstruction::Label(l) => {
+            SmaliOp::Label(l) => {
                 out.push_str(&format!("    {l}\n"));
             }
-            SmaliInstruction::Instruction(s) => {
+            SmaliOp::Op(s) => {
                 out.push_str(&format!("    {s}\n"));
             }
-            SmaliInstruction::Catch(c) => {
+            SmaliOp::Catch(c) => {
                 out.push_str(&format!("    {c}\n"));
             }
-            SmaliInstruction::ArrayData(ad) => {
+            SmaliOp::ArrayData(ad) => {
                 out.push_str(&format!("    {ad}\n"));
             }
-            SmaliInstruction::PackedSwitch(ps) => {
+            SmaliOp::PackedSwitch(ps) => {
                 out.push_str(&format!("    {ps}\n"));
             }
-            SmaliInstruction::SparseSwitch(ss) => {
+            SmaliOp::SparseSwitch(ss) => {
                 out.push_str(&format!("    {ss}\n"));
             }
         }

@@ -5,7 +5,7 @@
 use crate::types::{SmaliClass, SmaliError};
 use std::path::Path;
 
-pub mod smali_instructions;
+pub mod smali_ops;
 mod smali_parse;
 mod smali_write;
 pub mod types;

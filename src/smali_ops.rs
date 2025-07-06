@@ -112,13 +112,13 @@ impl fmt::Display for RegisterRange {
     }
 }
 
-/// A high-level representation of a DEX instruction.
+/// A high-level representation of a DEX operation.
 ///
 /// This enum “lifts” many opcodes so that literal values and symbolic references
 /// (e.g. for strings, classes, methods, fields, call sites, prototypes) are stored
 /// directly rather than as indices.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DexInstruction {
+pub enum DexOp {
     // Group A: constants, moves, returns, etc.
     ConstString {
         dest: SmaliRegister,
@@ -309,7 +309,7 @@ pub enum DexInstruction {
         src2: SmaliRegister,
     },
 
-    // Group B: Array, field, and invocation instructions.
+    // Group B: Array, field, and invocation operations.
     AGet {
         dest: SmaliRegister,
         array: SmaliRegister,
@@ -547,7 +547,7 @@ pub enum DexInstruction {
         method: MethodRef,
     },
 
-    // Group C: Arithmetic instructions (non-2addr).
+    // Group C: Arithmetic operations (non-2addr).
     AddInt {
         dest: SmaliRegister,
         src1: SmaliRegister,
@@ -709,7 +709,7 @@ pub enum DexInstruction {
         src2: SmaliRegister,
     },
 
-    // Group D: Arithmetic instructions (2addr variants).
+    // Group D: Arithmetic operations (2addr variants).
     AddInt2Addr {
         reg: SmaliRegister,
         src: SmaliRegister,
@@ -839,7 +839,7 @@ pub enum DexInstruction {
         src: SmaliRegister,
     },
 
-    // Additional conversion instructions:
+    // Additional conversion operations:
     IntToByte {
         dest: SmaliRegister,
         src: SmaliRegister,
@@ -853,7 +853,7 @@ pub enum DexInstruction {
         src: SmaliRegister,
     },
 
-    // Literal arithmetic instructions using lit8 encoding:
+    // Literal arithmetic operations using lit8 encoding:
     AddIntLit8 {
         dest: SmaliRegister,
         src: SmaliRegister,
@@ -910,7 +910,7 @@ pub enum DexInstruction {
         literal: i8,
     },
 
-    // Conditional branch instructions now using SmaliRegister:
+    // Conditional branch operations now using SmaliRegister:
     IfEq {
         reg1: SmaliRegister,
         reg2: SmaliRegister,
@@ -966,7 +966,7 @@ pub enum DexInstruction {
         offset: Label,
     },
 
-    // Arithmetic instructions:
+    // Arithmetic operations:
     NegInt {
         dest: SmaliRegister,
         src: SmaliRegister,
@@ -992,7 +992,7 @@ pub enum DexInstruction {
         src: SmaliRegister,
     },
 
-    // Conversion instructions added to the DexInstruction enum:
+    // Conversion operations added to the DexOp enum:
     IntToLong {
         dest: SmaliRegister,
         src: SmaliRegister,
@@ -1115,225 +1115,225 @@ pub enum DexInstruction {
     },
 }
 
-impl fmt::Display for DexInstruction {
+impl fmt::Display for DexOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // Group A
-            DexInstruction::ConstString { dest, value } => {
+            DexOp::ConstString { dest, value } => {
                 write!(f, "const-string {dest}, \"{value}\"")
             }
-            DexInstruction::ConstStringJumbo { dest, value } => {
+            DexOp::ConstStringJumbo { dest, value } => {
                 write!(f, "const-string/jumbo {dest}, \"{value}\"")
             }
-            DexInstruction::Nop => write!(f, "nop"),
-            DexInstruction::Move { dest, src } => write!(f, "move {dest}, {src}"),
-            DexInstruction::MoveFrom16 { dest, src } => write!(f, "move/from16 {dest}, {src}"),
-            DexInstruction::Move16 { dest, src } => write!(f, "move/16 {dest} , {src}"),
-            DexInstruction::MoveWide { dest, src } => write!(f, "move-wide {dest}, {src}"),
-            DexInstruction::MoveWideFrom16 { dest, src } => {
+            DexOp::Nop => write!(f, "nop"),
+            DexOp::Move { dest, src } => write!(f, "move {dest}, {src}"),
+            DexOp::MoveFrom16 { dest, src } => write!(f, "move/from16 {dest}, {src}"),
+            DexOp::Move16 { dest, src } => write!(f, "move/16 {dest} , {src}"),
+            DexOp::MoveWide { dest, src } => write!(f, "move-wide {dest}, {src}"),
+            DexOp::MoveWideFrom16 { dest, src } => {
                 write!(f, "move-wide/from16 {dest}, {src}")
             }
-            DexInstruction::MoveWide16 { dest, src } => write!(f, "move-wide/16 {dest} , {src}"),
-            DexInstruction::MoveObject { dest, src } => write!(f, "move-object {dest}, {src}"),
-            DexInstruction::MoveObjectFrom16 { dest, src } => {
+            DexOp::MoveWide16 { dest, src } => write!(f, "move-wide/16 {dest} , {src}"),
+            DexOp::MoveObject { dest, src } => write!(f, "move-object {dest}, {src}"),
+            DexOp::MoveObjectFrom16 { dest, src } => {
                 write!(f, "move-object/from16 {dest}, {src}")
             }
-            DexInstruction::MoveObject16 { dest, src } => {
+            DexOp::MoveObject16 { dest, src } => {
                 write!(f, "move-object/16 {dest} , {src}")
             }
-            DexInstruction::MoveResult { dest } => write!(f, "move-result {dest}"),
-            DexInstruction::MoveResultWide { dest } => write!(f, "move-result-wide {dest}"),
-            DexInstruction::MoveResultObject { dest } => write!(f, "move-result-object {dest}"),
-            DexInstruction::MoveException { dest } => write!(f, "move-exception {dest}"),
-            DexInstruction::ReturnVoid => write!(f, "return-void"),
-            DexInstruction::Return { src } => write!(f, "return {src}"),
-            DexInstruction::ReturnWide { src } => write!(f, "return-wide {src}"),
-            DexInstruction::ReturnObject { src } => write!(f, "return-object {src}"),
-            DexInstruction::Const4 { dest, value } => write!(f, "const/4 {dest}, {value}"),
-            DexInstruction::Const16 { dest, value } => write!(f, "const/16 {dest}, {value}"),
-            DexInstruction::Const { dest, value } => write!(f, "const {dest}, {value}"),
-            DexInstruction::ConstHigh16 { dest, value } => {
+            DexOp::MoveResult { dest } => write!(f, "move-result {dest}"),
+            DexOp::MoveResultWide { dest } => write!(f, "move-result-wide {dest}"),
+            DexOp::MoveResultObject { dest } => write!(f, "move-result-object {dest}"),
+            DexOp::MoveException { dest } => write!(f, "move-exception {dest}"),
+            DexOp::ReturnVoid => write!(f, "return-void"),
+            DexOp::Return { src } => write!(f, "return {src}"),
+            DexOp::ReturnWide { src } => write!(f, "return-wide {src}"),
+            DexOp::ReturnObject { src } => write!(f, "return-object {src}"),
+            DexOp::Const4 { dest, value } => write!(f, "const/4 {dest}, {value}"),
+            DexOp::Const16 { dest, value } => write!(f, "const/16 {dest}, {value}"),
+            DexOp::Const { dest, value } => write!(f, "const {dest}, {value}"),
+            DexOp::ConstHigh16 { dest, value } => {
                 write!(f, "const/high16 {dest}, 0x{value:0x}0000")
             }
-            DexInstruction::ConstWide16 { dest, value } => {
+            DexOp::ConstWide16 { dest, value } => {
                 write!(f, "const-wide/16 {dest}, {value}")
             }
-            DexInstruction::ConstWide32 { dest, value } => {
+            DexOp::ConstWide32 { dest, value } => {
                 write!(f, "const-wide/32 {dest}, {value}")
             }
-            DexInstruction::ConstWide { dest, value } => {
+            DexOp::ConstWide { dest, value } => {
                 write!(f, "const-wide {dest}, 0x{value:0x}L")
             }
-            DexInstruction::ConstWideHigh16 { dest, value } => {
+            DexOp::ConstWideHigh16 { dest, value } => {
                 write!(f, "const-wide/high16 {dest}, 0x{value:0x}000000000000L")
             }
-            DexInstruction::ConstClass { dest, class } => write!(f, "const-class {dest}, {class}"),
-            DexInstruction::MonitorEnter { src } => write!(f, "monitor-enter {src}"),
-            DexInstruction::MonitorExit { src } => write!(f, "monitor-exit {src}"),
-            DexInstruction::CheckCast { dest, class } => write!(f, "check-cast {dest}, {class}"),
-            DexInstruction::InstanceOf { dest, src, class } => {
+            DexOp::ConstClass { dest, class } => write!(f, "const-class {dest}, {class}"),
+            DexOp::MonitorEnter { src } => write!(f, "monitor-enter {src}"),
+            DexOp::MonitorExit { src } => write!(f, "monitor-exit {src}"),
+            DexOp::CheckCast { dest, class } => write!(f, "check-cast {dest}, {class}"),
+            DexOp::InstanceOf { dest, src, class } => {
                 write!(f, "instance-of {dest}, {src}, {class}")
             }
-            DexInstruction::ArrayLength { dest, array } => {
+            DexOp::ArrayLength { dest, array } => {
                 write!(f, "array-length {dest}, {array}")
             }
-            DexInstruction::NewInstance { dest, class } => {
+            DexOp::NewInstance { dest, class } => {
                 write!(f, "new-instance {dest}, {class}")
             }
-            DexInstruction::NewArray {
+            DexOp::NewArray {
                 dest,
                 size_reg,
                 class,
             } => write!(f, "new-array {dest}, {size_reg}, {class}"),
-            DexInstruction::FilledNewArray { registers, class } => {
+            DexOp::FilledNewArray { registers, class } => {
                 let regs: Vec<String> = registers.iter().map(|r| format!("{r}")).collect();
                 write!(f, "filled-new-array {{{}}}, {}", regs.join(", "), class)
             }
-            DexInstruction::FilledNewArrayRange { registers, class } => {
+            DexOp::FilledNewArrayRange { registers, class } => {
                 write!(f, "filled-new-array/range {registers}, {class}")
             }
-            DexInstruction::FillArrayData { reg, offset } => {
+            DexOp::FillArrayData { reg, offset } => {
                 write!(f, "fill-array-data {reg}, {offset}")
             }
-            DexInstruction::Throw { src } => write!(f, "throw {src}"),
-            DexInstruction::Goto { offset } => write!(f, "goto {offset}"),
-            DexInstruction::Goto16 { offset } => write!(f, "goto/16 {offset}"),
-            DexInstruction::Goto32 { offset } => write!(f, "goto/32 {offset}"),
-            DexInstruction::PackedSwitch { reg, offset } => {
+            DexOp::Throw { src } => write!(f, "throw {src}"),
+            DexOp::Goto { offset } => write!(f, "goto {offset}"),
+            DexOp::Goto16 { offset } => write!(f, "goto/16 {offset}"),
+            DexOp::Goto32 { offset } => write!(f, "goto/32 {offset}"),
+            DexOp::PackedSwitch { reg, offset } => {
                 write!(f, "packed-switch {reg}, {offset}")
             }
-            DexInstruction::SparseSwitch { reg, offset } => {
+            DexOp::SparseSwitch { reg, offset } => {
                 write!(f, "sparse-switch {reg}, {offset}")
             }
-            DexInstruction::CmplFloat { dest, src1, src2 } => {
+            DexOp::CmplFloat { dest, src1, src2 } => {
                 write!(f, "cmpl-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::CmpgFloat { dest, src1, src2 } => {
+            DexOp::CmpgFloat { dest, src1, src2 } => {
                 write!(f, "cmpg-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::CmplDouble { dest, src1, src2 } => {
+            DexOp::CmplDouble { dest, src1, src2 } => {
                 write!(f, "cmpl-double {dest}, {src1}, {src2}")
             }
-            DexInstruction::CmpgDouble { dest, src1, src2 } => {
+            DexOp::CmpgDouble { dest, src1, src2 } => {
                 write!(f, "cmpg-double {dest}, {src1}, {src2}")
             }
-            DexInstruction::CmpLong { dest, src1, src2 } => {
+            DexOp::CmpLong { dest, src1, src2 } => {
                 write!(f, "cmp-long {dest}, {src1}, {src2}")
             }
-            // Group B: Array, field and invocation instructions.
-            DexInstruction::AGet { dest, array, index } => {
+            // Group B: Array, field and invocation operations.
+            DexOp::AGet { dest, array, index } => {
                 write!(f, "aget {dest}, {array}, {index}")
             }
-            DexInstruction::AGetWide { dest, array, index } => {
+            DexOp::AGetWide { dest, array, index } => {
                 write!(f, "aget-wide {dest}, {array}, {index}")
             }
-            DexInstruction::AGetObject { dest, array, index } => {
+            DexOp::AGetObject { dest, array, index } => {
                 write!(f, "aget-object {dest}, {array}, {index}")
             }
-            DexInstruction::AGetBoolean { dest, array, index } => {
+            DexOp::AGetBoolean { dest, array, index } => {
                 write!(f, "aget-boolean {dest}, {array}, {index}")
             }
-            DexInstruction::AGetByte { dest, array, index } => {
+            DexOp::AGetByte { dest, array, index } => {
                 write!(f, "aget-byte {dest}, {array}, {index}")
             }
-            DexInstruction::AGetChar { dest, array, index } => {
+            DexOp::AGetChar { dest, array, index } => {
                 write!(f, "aget-char {dest}, {array}, {index}")
             }
-            DexInstruction::AGetShort { dest, array, index } => {
+            DexOp::AGetShort { dest, array, index } => {
                 write!(f, "aget-short {dest}, {array}, {index}")
             }
-            DexInstruction::APut { src, array, index } => write!(f, "aput {src}, {array}, {index}"),
-            DexInstruction::APutWide { src, array, index } => {
+            DexOp::APut { src, array, index } => write!(f, "aput {src}, {array}, {index}"),
+            DexOp::APutWide { src, array, index } => {
                 write!(f, "aput-wide {src}, {array}, {index}")
             }
-            DexInstruction::APutObject { src, array, index } => {
+            DexOp::APutObject { src, array, index } => {
                 write!(f, "aput-object {src}, {array}, {index}")
             }
-            DexInstruction::APutBoolean { src, array, index } => {
+            DexOp::APutBoolean { src, array, index } => {
                 write!(f, "aput-boolean {src}, {array}, {index}")
             }
-            DexInstruction::APutByte { src, array, index } => {
+            DexOp::APutByte { src, array, index } => {
                 write!(f, "aput-byte {src}, {array}, {index}")
             }
-            DexInstruction::APutChar { src, array, index } => {
+            DexOp::APutChar { src, array, index } => {
                 write!(f, "aput-char {src}, {array}, {index}")
             }
-            DexInstruction::APutShort { src, array, index } => {
+            DexOp::APutShort { src, array, index } => {
                 write!(f, "aput-short {src}, {array}, {index}")
             }
-            DexInstruction::IGet {
+            DexOp::IGet {
                 dest,
                 object,
                 field,
             } => write!(f, "iget {dest}, {object}, {field}"),
-            DexInstruction::IGetWide {
+            DexOp::IGetWide {
                 dest,
                 object,
                 field,
             } => write!(f, "iget-wide {dest}, {object}, {field}"),
-            DexInstruction::IGetObject {
+            DexOp::IGetObject {
                 dest,
                 object,
                 field,
             } => write!(f, "iget-object {dest}, {object}, {field}"),
-            DexInstruction::IGetBoolean {
+            DexOp::IGetBoolean {
                 dest,
                 object,
                 field,
             } => write!(f, "iget-boolean {dest}, {object}, {field}"),
-            DexInstruction::IGetByte {
+            DexOp::IGetByte {
                 dest,
                 object,
                 field,
             } => write!(f, "iget-byte {dest}, {object}, {field}"),
-            DexInstruction::IGetChar {
+            DexOp::IGetChar {
                 dest,
                 object,
                 field,
             } => write!(f, "iget-char {dest}, {object}, {field}"),
-            DexInstruction::IGetShort {
+            DexOp::IGetShort {
                 dest,
                 object,
                 field,
             } => write!(f, "iget-short {dest}, {object}, {field}"),
-            DexInstruction::IPut { src, object, field } => {
+            DexOp::IPut { src, object, field } => {
                 write!(f, "iput {src}, {object}, {field}")
             }
-            DexInstruction::IPutWide { src, object, field } => {
+            DexOp::IPutWide { src, object, field } => {
                 write!(f, "iput-wide {src}, {object}, {field}")
             }
-            DexInstruction::IPutObject { src, object, field } => {
+            DexOp::IPutObject { src, object, field } => {
                 write!(f, "iput-object {src}, {object}, {field}")
             }
-            DexInstruction::IPutBoolean { src, object, field } => {
+            DexOp::IPutBoolean { src, object, field } => {
                 write!(f, "iput-boolean {src}, {object}, {field}")
             }
-            DexInstruction::IPutByte { src, object, field } => {
+            DexOp::IPutByte { src, object, field } => {
                 write!(f, "iput-byte {src}, {object}, {field}")
             }
-            DexInstruction::IPutChar { src, object, field } => {
+            DexOp::IPutChar { src, object, field } => {
                 write!(f, "iput-char {src}, {object}, {field}")
             }
-            DexInstruction::IPutShort { src, object, field } => {
+            DexOp::IPutShort { src, object, field } => {
                 write!(f, "iput-short {src}, {object}, {field}")
             }
-            DexInstruction::SGet { dest, field } => write!(f, "sget {dest}, {field}"),
-            DexInstruction::SGetWide { dest, field } => write!(f, "sget-wide {dest}, {field}"),
-            DexInstruction::SGetObject { dest, field } => write!(f, "sget-object {dest}, {field}"),
-            DexInstruction::SGetBoolean { dest, field } => {
+            DexOp::SGet { dest, field } => write!(f, "sget {dest}, {field}"),
+            DexOp::SGetWide { dest, field } => write!(f, "sget-wide {dest}, {field}"),
+            DexOp::SGetObject { dest, field } => write!(f, "sget-object {dest}, {field}"),
+            DexOp::SGetBoolean { dest, field } => {
                 write!(f, "sget-boolean {dest}, {field}")
             }
-            DexInstruction::SGetByte { dest, field } => write!(f, "sget-byte {dest}, {field}"),
-            DexInstruction::SGetChar { dest, field } => write!(f, "sget-char {dest}, {field}"),
-            DexInstruction::SGetShort { dest, field } => write!(f, "sget-short {dest}, {field}"),
-            DexInstruction::SPut { src, field } => write!(f, "sput {src}, {field}"),
-            DexInstruction::SPutWide { src, field } => write!(f, "sput-wide {src}, {field}"),
-            DexInstruction::SPutObject { src, field } => write!(f, "sput-object {src}, {field}"),
-            DexInstruction::SPutBoolean { src, field } => write!(f, "sput-boolean {src}, {field}"),
-            DexInstruction::SPutByte { src, field } => write!(f, "sput-byte {src}, {field}"),
-            DexInstruction::SPutChar { src, field } => write!(f, "sput-char {src}, {field}"),
-            DexInstruction::SPutShort { src, field } => write!(f, "sput-short {src}, {field}"),
-            DexInstruction::InvokeVirtual { registers, method } => {
+            DexOp::SGetByte { dest, field } => write!(f, "sget-byte {dest}, {field}"),
+            DexOp::SGetChar { dest, field } => write!(f, "sget-char {dest}, {field}"),
+            DexOp::SGetShort { dest, field } => write!(f, "sget-short {dest}, {field}"),
+            DexOp::SPut { src, field } => write!(f, "sput {src}, {field}"),
+            DexOp::SPutWide { src, field } => write!(f, "sput-wide {src}, {field}"),
+            DexOp::SPutObject { src, field } => write!(f, "sput-object {src}, {field}"),
+            DexOp::SPutBoolean { src, field } => write!(f, "sput-boolean {src}, {field}"),
+            DexOp::SPutByte { src, field } => write!(f, "sput-byte {src}, {field}"),
+            DexOp::SPutChar { src, field } => write!(f, "sput-char {src}, {field}"),
+            DexOp::SPutShort { src, field } => write!(f, "sput-short {src}, {field}"),
+            DexOp::InvokeVirtual { registers, method } => {
                 let regs = registers
                     .iter()
                     .map(|r| format!("{r}"))
@@ -1341,7 +1341,7 @@ impl fmt::Display for DexInstruction {
                     .join(", ");
                 write!(f, "invoke-virtual {{{regs}}}, {method}")
             }
-            DexInstruction::InvokeSuper { registers, method } => {
+            DexOp::InvokeSuper { registers, method } => {
                 let regs = registers
                     .iter()
                     .map(|r| format!("{r}"))
@@ -1349,7 +1349,7 @@ impl fmt::Display for DexInstruction {
                     .join(", ");
                 write!(f, "invoke-super {{{regs}}}, {method}")
             }
-            DexInstruction::InvokeInterface { registers, method } => {
+            DexOp::InvokeInterface { registers, method } => {
                 let regs = registers
                     .iter()
                     .map(|r| format!("{r}"))
@@ -1357,165 +1357,165 @@ impl fmt::Display for DexInstruction {
                     .join(", ");
                 write!(f, "invoke-interface {{{regs}}}, {method}")
             }
-            DexInstruction::InvokeVirtualRange { range, method } => {
+            DexOp::InvokeVirtualRange { range, method } => {
                 write!(f, "invoke-virtual/range {range}, {method}")
             }
-            DexInstruction::InvokeSuperRange { range, method } => {
+            DexOp::InvokeSuperRange { range, method } => {
                 write!(f, "invoke-super/range {range}, {method}")
             }
-            DexInstruction::InvokeDirectRange { range, method } => {
+            DexOp::InvokeDirectRange { range, method } => {
                 write!(f, "invoke-direct/range {range}, {method}")
             }
-            DexInstruction::InvokeStaticRange { range, method } => {
+            DexOp::InvokeStaticRange { range, method } => {
                 write!(f, "invoke-static/range {range}, {method}")
             }
-            DexInstruction::InvokeInterfaceRange { range, method } => {
+            DexOp::InvokeInterfaceRange { range, method } => {
                 write!(f, "invoke-interface/range {range}, {method}")
             }
 
             // Group C: Arithmetic (non-2addr)
-            DexInstruction::AddInt { dest, src1, src2 } => {
+            DexOp::AddInt { dest, src1, src2 } => {
                 write!(f, "add-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::SubInt { dest, src1, src2 } => {
+            DexOp::SubInt { dest, src1, src2 } => {
                 write!(f, "sub-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::MulInt { dest, src1, src2 } => {
+            DexOp::MulInt { dest, src1, src2 } => {
                 write!(f, "mul-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::DivInt { dest, src1, src2 } => {
+            DexOp::DivInt { dest, src1, src2 } => {
                 write!(f, "div-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::RemInt { dest, src1, src2 } => {
+            DexOp::RemInt { dest, src1, src2 } => {
                 write!(f, "rem-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::AndInt { dest, src1, src2 } => {
+            DexOp::AndInt { dest, src1, src2 } => {
                 write!(f, "and-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::OrInt { dest, src1, src2 } => {
+            DexOp::OrInt { dest, src1, src2 } => {
                 write!(f, "or-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::XorInt { dest, src1, src2 } => {
+            DexOp::XorInt { dest, src1, src2 } => {
                 write!(f, "xor-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::ShlInt { dest, src1, src2 } => {
+            DexOp::ShlInt { dest, src1, src2 } => {
                 write!(f, "shl-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::ShrInt { dest, src1, src2 } => {
+            DexOp::ShrInt { dest, src1, src2 } => {
                 write!(f, "shr-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::UshrInt { dest, src1, src2 } => {
+            DexOp::UshrInt { dest, src1, src2 } => {
                 write!(f, "ushr-int {dest}, {src1}, {src2}")
             }
-            DexInstruction::AddLong { dest, src1, src2 } => {
+            DexOp::AddLong { dest, src1, src2 } => {
                 write!(f, "add-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::SubLong { dest, src1, src2 } => {
+            DexOp::SubLong { dest, src1, src2 } => {
                 write!(f, "sub-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::MulLong { dest, src1, src2 } => {
+            DexOp::MulLong { dest, src1, src2 } => {
                 write!(f, "mul-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::DivLong { dest, src1, src2 } => {
+            DexOp::DivLong { dest, src1, src2 } => {
                 write!(f, "div-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::RemLong { dest, src1, src2 } => {
+            DexOp::RemLong { dest, src1, src2 } => {
                 write!(f, "rem-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::AndLong { dest, src1, src2 } => {
+            DexOp::AndLong { dest, src1, src2 } => {
                 write!(f, "and-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::OrLong { dest, src1, src2 } => {
+            DexOp::OrLong { dest, src1, src2 } => {
                 write!(f, "or-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::XorLong { dest, src1, src2 } => {
+            DexOp::XorLong { dest, src1, src2 } => {
                 write!(f, "xor-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::ShlLong { dest, src1, src2 } => {
+            DexOp::ShlLong { dest, src1, src2 } => {
                 write!(f, "shl-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::ShrLong { dest, src1, src2 } => {
+            DexOp::ShrLong { dest, src1, src2 } => {
                 write!(f, "shr-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::UshrLong { dest, src1, src2 } => {
+            DexOp::UshrLong { dest, src1, src2 } => {
                 write!(f, "ushr-long {dest}, {src1}, {src2}")
             }
-            DexInstruction::AddFloat { dest, src1, src2 } => {
+            DexOp::AddFloat { dest, src1, src2 } => {
                 write!(f, "add-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::SubFloat { dest, src1, src2 } => {
+            DexOp::SubFloat { dest, src1, src2 } => {
                 write!(f, "sub-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::MulFloat { dest, src1, src2 } => {
+            DexOp::MulFloat { dest, src1, src2 } => {
                 write!(f, "mul-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::DivFloat { dest, src1, src2 } => {
+            DexOp::DivFloat { dest, src1, src2 } => {
                 write!(f, "div-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::RemFloat { dest, src1, src2 } => {
+            DexOp::RemFloat { dest, src1, src2 } => {
                 write!(f, "rem-float {dest}, {src1}, {src2}")
             }
-            DexInstruction::AddDouble { dest, src1, src2 } => {
+            DexOp::AddDouble { dest, src1, src2 } => {
                 write!(f, "add-double {dest}, {src1}, {src2}")
             }
-            DexInstruction::SubDouble { dest, src1, src2 } => {
+            DexOp::SubDouble { dest, src1, src2 } => {
                 write!(f, "sub-double {dest}, {src1}, {src2}")
             }
-            DexInstruction::MulDouble { dest, src1, src2 } => {
+            DexOp::MulDouble { dest, src1, src2 } => {
                 write!(f, "mul-double {dest}, {src1}, {src2}")
             }
-            DexInstruction::DivDouble { dest, src1, src2 } => {
+            DexOp::DivDouble { dest, src1, src2 } => {
                 write!(f, "div-double {dest}, {src1}, {src2}")
             }
-            DexInstruction::RemDouble { dest, src1, src2 } => {
+            DexOp::RemDouble { dest, src1, src2 } => {
                 write!(f, "rem-double {dest}, {src1}, {src2}")
             }
 
-            // Group D: 2addr arithmetic instructions.
-            DexInstruction::AddInt2Addr { reg, src } => write!(f, "add-int/2addr {reg}, {src}"),
-            DexInstruction::SubInt2Addr { reg, src } => write!(f, "sub-int/2addr {reg}, {src}"),
-            DexInstruction::MulInt2Addr { reg, src } => write!(f, "mul-int/2addr {reg}, {src}"),
-            DexInstruction::DivInt2Addr { reg, src } => write!(f, "div-int/2addr {reg}, {src}"),
-            DexInstruction::RemInt2Addr { reg, src } => write!(f, "rem-int/2addr {reg}, {src}"),
-            DexInstruction::AndInt2Addr { reg, src } => write!(f, "and-int/2addr {reg}, {src}"),
-            DexInstruction::OrInt2Addr { reg, src } => write!(f, "or-int/2addr {reg}, {src}"),
-            DexInstruction::XorInt2Addr { reg, src } => write!(f, "xor-int/2addr {reg}, {src}"),
-            DexInstruction::ShlInt2Addr { reg, src } => write!(f, "shl-int/2addr {reg}, {src}"),
-            DexInstruction::ShrInt2Addr { reg, src } => write!(f, "shr-int/2addr {reg}, {src}"),
-            DexInstruction::UshrInt2Addr { reg, src } => write!(f, "ushr-int/2addr {reg}, {src}"),
-            DexInstruction::AddLong2Addr { reg, src } => write!(f, "add-long/2addr {reg}, {src}"),
-            DexInstruction::SubLong2Addr { reg, src } => write!(f, "sub-long/2addr {reg}, {src}"),
-            DexInstruction::MulLong2Addr { reg, src } => write!(f, "mul-long/2addr {reg}, {src}"),
-            DexInstruction::DivLong2Addr { reg, src } => write!(f, "div-long/2addr {reg}, {src}"),
-            DexInstruction::RemLong2Addr { reg, src } => write!(f, "rem-long/2addr {reg}, {src}"),
-            DexInstruction::AndLong2Addr { reg, src } => write!(f, "and-long/2addr {reg}, {src}"),
-            DexInstruction::OrLong2Addr { reg, src } => write!(f, "or-long/2addr {reg}, {src}"),
-            DexInstruction::XorLong2Addr { reg, src } => write!(f, "xor-long/2addr {reg}, {src}"),
-            DexInstruction::ShlLong2Addr { reg, src } => write!(f, "shl-long/2addr {reg}, {src}"),
-            DexInstruction::ShrLong2Addr { reg, src } => write!(f, "shr-long/2addr {reg}, {src}"),
-            DexInstruction::UshrLong2Addr { reg, src } => write!(f, "ushr-long/2addr {reg}, {src}"),
-            DexInstruction::AddFloat2Addr { reg, src } => write!(f, "add-float/2addr {reg}, {src}"),
-            DexInstruction::SubFloat2Addr { reg, src } => write!(f, "sub-float/2addr {reg}, {src}"),
-            DexInstruction::MulFloat2Addr { reg, src } => write!(f, "mul-float/2addr {reg}, {src}"),
-            DexInstruction::DivFloat2Addr { reg, src } => write!(f, "div-float/2addr {reg}, {src}"),
-            DexInstruction::RemFloat2Addr { reg, src } => write!(f, "rem-float/2addr {reg}, {src}"),
-            DexInstruction::AddDouble2Addr { reg, src } => {
+            // Group D: 2addr arithmetic operations.
+            DexOp::AddInt2Addr { reg, src } => write!(f, "add-int/2addr {reg}, {src}"),
+            DexOp::SubInt2Addr { reg, src } => write!(f, "sub-int/2addr {reg}, {src}"),
+            DexOp::MulInt2Addr { reg, src } => write!(f, "mul-int/2addr {reg}, {src}"),
+            DexOp::DivInt2Addr { reg, src } => write!(f, "div-int/2addr {reg}, {src}"),
+            DexOp::RemInt2Addr { reg, src } => write!(f, "rem-int/2addr {reg}, {src}"),
+            DexOp::AndInt2Addr { reg, src } => write!(f, "and-int/2addr {reg}, {src}"),
+            DexOp::OrInt2Addr { reg, src } => write!(f, "or-int/2addr {reg}, {src}"),
+            DexOp::XorInt2Addr { reg, src } => write!(f, "xor-int/2addr {reg}, {src}"),
+            DexOp::ShlInt2Addr { reg, src } => write!(f, "shl-int/2addr {reg}, {src}"),
+            DexOp::ShrInt2Addr { reg, src } => write!(f, "shr-int/2addr {reg}, {src}"),
+            DexOp::UshrInt2Addr { reg, src } => write!(f, "ushr-int/2addr {reg}, {src}"),
+            DexOp::AddLong2Addr { reg, src } => write!(f, "add-long/2addr {reg}, {src}"),
+            DexOp::SubLong2Addr { reg, src } => write!(f, "sub-long/2addr {reg}, {src}"),
+            DexOp::MulLong2Addr { reg, src } => write!(f, "mul-long/2addr {reg}, {src}"),
+            DexOp::DivLong2Addr { reg, src } => write!(f, "div-long/2addr {reg}, {src}"),
+            DexOp::RemLong2Addr { reg, src } => write!(f, "rem-long/2addr {reg}, {src}"),
+            DexOp::AndLong2Addr { reg, src } => write!(f, "and-long/2addr {reg}, {src}"),
+            DexOp::OrLong2Addr { reg, src } => write!(f, "or-long/2addr {reg}, {src}"),
+            DexOp::XorLong2Addr { reg, src } => write!(f, "xor-long/2addr {reg}, {src}"),
+            DexOp::ShlLong2Addr { reg, src } => write!(f, "shl-long/2addr {reg}, {src}"),
+            DexOp::ShrLong2Addr { reg, src } => write!(f, "shr-long/2addr {reg}, {src}"),
+            DexOp::UshrLong2Addr { reg, src } => write!(f, "ushr-long/2addr {reg}, {src}"),
+            DexOp::AddFloat2Addr { reg, src } => write!(f, "add-float/2addr {reg}, {src}"),
+            DexOp::SubFloat2Addr { reg, src } => write!(f, "sub-float/2addr {reg}, {src}"),
+            DexOp::MulFloat2Addr { reg, src } => write!(f, "mul-float/2addr {reg}, {src}"),
+            DexOp::DivFloat2Addr { reg, src } => write!(f, "div-float/2addr {reg}, {src}"),
+            DexOp::RemFloat2Addr { reg, src } => write!(f, "rem-float/2addr {reg}, {src}"),
+            DexOp::AddDouble2Addr { reg, src } => {
                 write!(f, "add-double/2addr {reg}, {src}")
             }
-            DexInstruction::SubDouble2Addr { reg, src } => {
+            DexOp::SubDouble2Addr { reg, src } => {
                 write!(f, "sub-double/2addr {reg}, {src}")
             }
-            DexInstruction::MulDouble2Addr { reg, src } => {
+            DexOp::MulDouble2Addr { reg, src } => {
                 write!(f, "mul-double/2addr {reg}, {src}")
             }
-            DexInstruction::DivDouble2Addr { reg, src } => {
+            DexOp::DivDouble2Addr { reg, src } => {
                 write!(f, "div-double/2addr {reg}, {src}")
             }
-            DexInstruction::RemDouble2Addr { reg, src } => {
+            DexOp::RemDouble2Addr { reg, src } => {
                 write!(f, "rem-double/2addr {reg}, {src}")
             }
             // Group E: Polymorphic, custom and method handle/type constants.
-            DexInstruction::InvokePolymorphic {
+            DexOp::InvokePolymorphic {
                 registers,
                 method,
                 proto,
@@ -1527,14 +1527,14 @@ impl fmt::Display for DexInstruction {
                     .join(", ");
                 write!(f, "invoke-polymorphic {{{regs}}}, {method}, {proto}")
             }
-            DexInstruction::InvokePolymorphicRange {
+            DexOp::InvokePolymorphicRange {
                 range,
                 method,
                 proto,
             } => {
                 write!(f, "invoke-polymorphic/range {range}, {method}, {proto}")
             }
-            DexInstruction::InvokeCustom {
+            DexOp::InvokeCustom {
                 registers,
                 call_site,
             } => {
@@ -1545,47 +1545,47 @@ impl fmt::Display for DexInstruction {
                     .join(", ");
                 write!(f, "invoke-custom {{{regs}}}, {call_site}")
             }
-            DexInstruction::InvokeCustomRange { range, call_site } => {
+            DexOp::InvokeCustomRange { range, call_site } => {
                 write!(f, "invoke-custom/range {range}, {call_site}")
             }
-            DexInstruction::ConstMethodHandle {
+            DexOp::ConstMethodHandle {
                 dest,
                 method_handle,
             } => write!(f, "const-method-handle {dest}, {method_handle}"),
-            DexInstruction::ConstMethodType { dest, proto } => {
+            DexOp::ConstMethodType { dest, proto } => {
                 write!(f, "const-method-type {dest}, {proto}")
             }
 
             // Conditional branches:
-            DexInstruction::IfEq { reg1, reg2, offset } => {
+            DexOp::IfEq { reg1, reg2, offset } => {
                 write!(f, "if-eq {reg1}, {reg2}, {offset}")
             }
-            DexInstruction::IfNe { reg1, reg2, offset } => {
+            DexOp::IfNe { reg1, reg2, offset } => {
                 write!(f, "if-ne {reg1}, {reg2}, {offset}")
             }
-            DexInstruction::IfLt { reg1, reg2, offset } => {
+            DexOp::IfLt { reg1, reg2, offset } => {
                 write!(f, "if-lt {reg1}, {reg2}, {offset}")
             }
-            DexInstruction::IfGe { reg1, reg2, offset } => {
+            DexOp::IfGe { reg1, reg2, offset } => {
                 write!(f, "if-ge {reg1}, {reg2}, {offset}")
             }
-            DexInstruction::IfGt { reg1, reg2, offset } => {
+            DexOp::IfGt { reg1, reg2, offset } => {
                 write!(f, "if-gt {reg1}, {reg2}, {offset}")
             }
-            DexInstruction::IfLe { reg1, reg2, offset } => {
+            DexOp::IfLe { reg1, reg2, offset } => {
                 write!(f, "if-le {reg1}, {reg2}, {offset}")
             }
 
-            // Conditional branch instructions with a single register:
-            DexInstruction::IfEqz { reg, offset } => write!(f, "if-eqz {reg}, {offset}"),
-            DexInstruction::IfNez { reg, offset } => write!(f, "if-nez {reg}, {offset}"),
-            DexInstruction::IfLtz { reg, offset } => write!(f, "if-ltz {reg}, {offset}"),
-            DexInstruction::IfGez { reg, offset } => write!(f, "if-gez {reg}, {offset}"),
-            DexInstruction::IfGtz { reg, offset } => write!(f, "if-gtz {reg}, {offset}"),
-            DexInstruction::IfLez { reg, offset } => write!(f, "if-lez {reg}, {offset}"),
+            // Conditional branch operations with a single register:
+            DexOp::IfEqz { reg, offset } => write!(f, "if-eqz {reg}, {offset}"),
+            DexOp::IfNez { reg, offset } => write!(f, "if-nez {reg}, {offset}"),
+            DexOp::IfLtz { reg, offset } => write!(f, "if-ltz {reg}, {offset}"),
+            DexOp::IfGez { reg, offset } => write!(f, "if-gez {reg}, {offset}"),
+            DexOp::IfGtz { reg, offset } => write!(f, "if-gtz {reg}, {offset}"),
+            DexOp::IfLez { reg, offset } => write!(f, "if-lez {reg}, {offset}"),
 
-            // Invocation instructions
-            DexInstruction::InvokeDirect { registers, method } => {
+            // Invocation operations
+            DexOp::InvokeDirect { registers, method } => {
                 let regs = registers
                     .iter()
                     .map(|r| format!("{r}"))
@@ -1593,7 +1593,7 @@ impl fmt::Display for DexInstruction {
                     .join(", ");
                 write!(f, "invoke-direct {{{regs}}}, {method}")
             }
-            DexInstruction::InvokeStatic { registers, method } => {
+            DexOp::InvokeStatic { registers, method } => {
                 let regs = registers
                     .iter()
                     .map(|r| format!("{r}"))
@@ -1602,101 +1602,101 @@ impl fmt::Display for DexInstruction {
                 write!(f, "invoke-static {{{regs}}}, {method}")
             }
 
-            // Arithmetic instructions
-            DexInstruction::NegInt { dest, src } => write!(f, "neg-int {dest}, {src}"),
-            DexInstruction::NotInt { dest, src } => write!(f, "not-int {dest}, {src}"),
-            DexInstruction::NegLong { dest, src } => write!(f, "neg-long {dest}, {src}"),
-            DexInstruction::NotLong { dest, src } => write!(f, "not-long {dest}, {src}"),
-            DexInstruction::NegFloat { dest, src } => write!(f, "neg-float {dest}, {src}"),
-            DexInstruction::NegDouble { dest, src } => write!(f, "neg-double {dest}, {src}"),
+            // Arithmetic operations
+            DexOp::NegInt { dest, src } => write!(f, "neg-int {dest}, {src}"),
+            DexOp::NotInt { dest, src } => write!(f, "not-int {dest}, {src}"),
+            DexOp::NegLong { dest, src } => write!(f, "neg-long {dest}, {src}"),
+            DexOp::NotLong { dest, src } => write!(f, "not-long {dest}, {src}"),
+            DexOp::NegFloat { dest, src } => write!(f, "neg-float {dest}, {src}"),
+            DexOp::NegDouble { dest, src } => write!(f, "neg-double {dest}, {src}"),
 
-            // Conversion instructions:
-            DexInstruction::IntToLong { dest, src } => write!(f, "int-to-long {dest}, {src}"),
-            DexInstruction::IntToFloat { dest, src } => write!(f, "int-to-float {dest}, {src}"),
-            DexInstruction::IntToDouble { dest, src } => write!(f, "int-to-double {dest}, {src}"),
-            DexInstruction::LongToInt { dest, src } => write!(f, "long-to-int {dest}, {src}"),
-            DexInstruction::LongToFloat { dest, src } => write!(f, "long-to-float {dest}, {src}"),
-            DexInstruction::LongToDouble { dest, src } => write!(f, "long-to-double {dest}, {src}"),
-            DexInstruction::FloatToInt { dest, src } => write!(f, "float-to-int {dest}, {src}"),
-            DexInstruction::FloatToLong { dest, src } => write!(f, "float-to-long {dest}, {src}"),
-            DexInstruction::FloatToDouble { dest, src } => {
+            // Conversion operations:
+            DexOp::IntToLong { dest, src } => write!(f, "int-to-long {dest}, {src}"),
+            DexOp::IntToFloat { dest, src } => write!(f, "int-to-float {dest}, {src}"),
+            DexOp::IntToDouble { dest, src } => write!(f, "int-to-double {dest}, {src}"),
+            DexOp::LongToInt { dest, src } => write!(f, "long-to-int {dest}, {src}"),
+            DexOp::LongToFloat { dest, src } => write!(f, "long-to-float {dest}, {src}"),
+            DexOp::LongToDouble { dest, src } => write!(f, "long-to-double {dest}, {src}"),
+            DexOp::FloatToInt { dest, src } => write!(f, "float-to-int {dest}, {src}"),
+            DexOp::FloatToLong { dest, src } => write!(f, "float-to-long {dest}, {src}"),
+            DexOp::FloatToDouble { dest, src } => {
                 write!(f, "float-to-double {dest}, {src}")
             }
-            DexInstruction::DoubleToInt { dest, src } => write!(f, "double-to-int {dest}, {src}"),
-            DexInstruction::DoubleToLong { dest, src } => write!(f, "double-to-long {dest}, {src}"),
-            DexInstruction::DoubleToFloat { dest, src } => {
+            DexOp::DoubleToInt { dest, src } => write!(f, "double-to-int {dest}, {src}"),
+            DexOp::DoubleToLong { dest, src } => write!(f, "double-to-long {dest}, {src}"),
+            DexOp::DoubleToFloat { dest, src } => {
                 write!(f, "double-to-float {dest}, {src}")
             }
 
             // Additional conversion variants:
-            DexInstruction::IntToByte { dest, src } => write!(f, "int-to-byte {dest}, {src}"),
-            DexInstruction::IntToChar { dest, src } => write!(f, "int-to-char {dest}, {src}"),
-            DexInstruction::IntToShort { dest, src } => write!(f, "int-to-short {dest}, {src}"),
+            DexOp::IntToByte { dest, src } => write!(f, "int-to-byte {dest}, {src}"),
+            DexOp::IntToChar { dest, src } => write!(f, "int-to-char {dest}, {src}"),
+            DexOp::IntToShort { dest, src } => write!(f, "int-to-short {dest}, {src}"),
 
-            // Arithmetic literal instructions (example for int):
-            DexInstruction::AddIntLit16 { dest, src, literal } => {
+            // Arithmetic literal operations (example for int):
+            DexOp::AddIntLit16 { dest, src, literal } => {
                 write!(f, "add-int/lit16 {dest}, {src}, {literal}")
             }
-            DexInstruction::RSubIntLit16 { dest, src, literal } => {
+            DexOp::RSubIntLit16 { dest, src, literal } => {
                 write!(f, "rsub-int {dest}, {src}, {literal}")
             }
-            DexInstruction::MulIntLit16 { dest, src, literal } => {
+            DexOp::MulIntLit16 { dest, src, literal } => {
                 write!(f, "mul-int/lit16 {dest}, {src}, {literal}")
             }
-            DexInstruction::DivIntLit16 { dest, src, literal } => {
+            DexOp::DivIntLit16 { dest, src, literal } => {
                 write!(f, "div-int/lit16 {dest}, {src}, {literal}")
             }
-            DexInstruction::RemIntLit16 { dest, src, literal } => {
+            DexOp::RemIntLit16 { dest, src, literal } => {
                 write!(f, "rem-int/lit16 {dest}, {src}, {literal}")
             }
-            DexInstruction::AndIntLit16 { dest, src, literal } => {
+            DexOp::AndIntLit16 { dest, src, literal } => {
                 write!(f, "and-int/lit16 {dest}, {src}, {literal}")
             }
-            DexInstruction::OrIntLit16 { dest, src, literal } => {
+            DexOp::OrIntLit16 { dest, src, literal } => {
                 write!(f, "or-int/lit16 {dest}, {src}, {literal}")
             }
-            DexInstruction::XorIntLit16 { dest, src, literal } => {
+            DexOp::XorIntLit16 { dest, src, literal } => {
                 write!(f, "xor-int/lit16 {dest}, {src}, {literal}")
             }
 
-            // Literal arithmetic instructions (lit8 variants):
-            DexInstruction::AddIntLit8 { dest, src, literal } => {
+            // Literal arithmetic operations (lit8 variants):
+            DexOp::AddIntLit8 { dest, src, literal } => {
                 write!(f, "add-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::RSubIntLit8 { dest, src, literal } => {
+            DexOp::RSubIntLit8 { dest, src, literal } => {
                 write!(f, "rsub-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::MulIntLit8 { dest, src, literal } => {
+            DexOp::MulIntLit8 { dest, src, literal } => {
                 write!(f, "mul-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::DivIntLit8 { dest, src, literal } => {
+            DexOp::DivIntLit8 { dest, src, literal } => {
                 write!(f, "div-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::RemIntLit8 { dest, src, literal } => {
+            DexOp::RemIntLit8 { dest, src, literal } => {
                 write!(f, "rem-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::AndIntLit8 { dest, src, literal } => {
+            DexOp::AndIntLit8 { dest, src, literal } => {
                 write!(f, "and-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::OrIntLit8 { dest, src, literal } => {
+            DexOp::OrIntLit8 { dest, src, literal } => {
                 write!(f, "or-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::XorIntLit8 { dest, src, literal } => {
+            DexOp::XorIntLit8 { dest, src, literal } => {
                 write!(f, "xor-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::ShlIntLit8 { dest, src, literal } => {
+            DexOp::ShlIntLit8 { dest, src, literal } => {
                 write!(f, "shl-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::ShrIntLit8 { dest, src, literal } => {
+            DexOp::ShrIntLit8 { dest, src, literal } => {
                 write!(f, "shr-int/lit8 {dest}, {src}, {literal}")
             }
-            DexInstruction::UshrIntLit8 { dest, src, literal } => {
+            DexOp::UshrIntLit8 { dest, src, literal } => {
                 write!(f, "ushr-int/lit8 {dest}, {src}, {literal}")
             }
 
             // Unused - shouldn't come across this
-            DexInstruction::Unused { .. } => {
-                panic!("Attempted fmt display on Unused instruction")
+            DexOp::Unused { .. } => {
+                panic!("Attempted fmt display on Unused operation")
             }
         }
     }
@@ -1885,22 +1885,22 @@ fn parse_field_ref(input: &str) -> IResult<&str, FieldRef> {
     ))
 }
 
-fn parse_const_high16(input: &str) -> IResult<&str, DexInstruction> {
+fn parse_const_high16(input: &str) -> IResult<&str, DexOp> {
     let (input, _) = space1(input)?;
     let (input, dest) = parse_register(input)?;
     let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, value32): (&str, i32) = parse_literal_int(input)?;
     let value = (value32 >> 16) as i16;
-    Ok((input, DexInstruction::ConstHigh16 { dest, value }))
+    Ok((input, DexOp::ConstHigh16 { dest, value }))
 }
 
-fn parse_const_wide_high16(input: &str) -> IResult<&str, DexInstruction> {
+fn parse_const_wide_high16(input: &str) -> IResult<&str, DexOp> {
     let (input, _) = space1(input)?;
     let (input, dest) = parse_register(input)?;
     let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, value64): (&str, i64) = parse_literal_int(input)?;
     let value = (value64 >> 48) as i16;
-    Ok((input, DexInstruction::ConstWideHigh16 { dest, value }))
+    Ok((input, DexOp::ConstWideHigh16 { dest, value }))
 }
 
 /// Parses a register range enclosed in braces, e.g. "{v0 .. v6}".
@@ -1914,7 +1914,7 @@ fn parse_register_range(input: &str) -> IResult<&str, RegisterRange> {
     Ok((input, RegisterRange { start, end }))
 }
 
-fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexInstruction> {
+fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexOp> {
     let (input, _) = space1(input)?;
     let (input, registers) = parse_register_list(input)?;
     let (input, _) = delimited(space0, char(','), space0).parse(input)?;
@@ -1923,7 +1923,7 @@ fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexInstruction> {
     let (input, proto) = alphanumeric1(input)?;
     Ok((
         input,
-        DexInstruction::InvokePolymorphic {
+        DexOp::InvokePolymorphic {
             registers,
             method,
             proto: proto.to_owned(),
@@ -1931,7 +1931,7 @@ fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexInstruction> {
     ))
 }
 
-fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexInstruction> {
+fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexOp> {
     let (input, _) = space1(input)?;
     let (input, range) = parse_register_range(input)?;
     let (input, _) = delimited(space0, char(','), space0).parse(input)?;
@@ -1940,7 +1940,7 @@ fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexInstruction> 
     let (input, proto) = alphanumeric1(input)?;
     Ok((
         input,
-        DexInstruction::InvokePolymorphicRange {
+        DexOp::InvokePolymorphicRange {
             range,
             method,
             proto: proto.to_owned(),
@@ -1948,37 +1948,37 @@ fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexInstruction> 
     ))
 }
 
-fn parse_invoke_custom(input: &str) -> IResult<&str, DexInstruction> {
+fn parse_invoke_custom(input: &str) -> IResult<&str, DexOp> {
     let (input, _) = space1(input)?;
     let (input, registers) = parse_register_list(input)?;
     let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, call_site) = alphanumeric1(input)?;
     Ok((
         input,
-        DexInstruction::InvokeCustom {
+        DexOp::InvokeCustom {
             registers,
             call_site: call_site.to_owned(),
         },
     ))
 }
 
-fn parse_invoke_custom_range(input: &str) -> IResult<&str, DexInstruction> {
+fn parse_invoke_custom_range(input: &str) -> IResult<&str, DexOp> {
     let (input, _) = space1(input)?;
     let (input, range) = parse_register_range(input)?;
     let (input, _) = delimited(space0, char(','), space0).parse(input)?;
     let (input, call_site) = alphanumeric1(input)?;
     Ok((
         input,
-        DexInstruction::InvokeCustomRange {
+        DexOp::InvokeCustomRange {
             range,
             call_site: call_site.to_owned(),
         },
     ))
 }
 
-fn parse_invoke<F>(constructor: F, input: &str) -> IResult<&str, DexInstruction>
+fn parse_invoke<F>(constructor: F, input: &str) -> IResult<&str, DexOp>
 where
-    F: Fn(Vec<SmaliRegister>, MethodRef) -> DexInstruction,
+    F: Fn(Vec<SmaliRegister>, MethodRef) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, registers) = parse_register_list(input)?;
@@ -1990,7 +1990,7 @@ where
 macro_rules! invoke_case {
     ($variant:ident, $input: expr) => {
         parse_invoke(
-            |regs, method| DexInstruction::$variant {
+            |regs, method| DexOp::$variant {
                 registers: regs,
                 method,
             },
@@ -1999,9 +1999,9 @@ macro_rules! invoke_case {
     };
 }
 
-fn parse_one_reg_instruction<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_one_reg_op<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister) -> DexInstruction,
+    F: Fn(SmaliRegister) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, reg) = parse_register(input)?;
@@ -2010,14 +2010,14 @@ where
 
 macro_rules! one_reg_case {
     ($variant:ident, $field:ident, $input:expr) => {
-        parse_one_reg_instruction($input, |r| DexInstruction::$variant { $field: r })
+        parse_one_reg_op($input, |r| DexOp::$variant { $field: r })
     };
 }
 
 /// Helper function: it consumes a space, then a register, then a comma (with optional spaces), then another register.
-fn parse_two_reg_instruction<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_two_reg_op<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, SmaliRegister) -> DexInstruction,
+    F: Fn(SmaliRegister, SmaliRegister) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, r1) = parse_register(input)?;
@@ -2026,10 +2026,10 @@ where
     Ok((input, constructor(r1, r2)))
 }
 
-/// Macro for two-register instructions. You specify the variant name and the names of the fields.
+/// Macro for two-register operations. You specify the variant name and the names of the fields.
 macro_rules! two_reg_case {
     ($variant:ident, $field1:ident, $field2:ident, $input:expr) => {
-        parse_two_reg_instruction($input, |r1, r2| DexInstruction::$variant {
+        parse_two_reg_op($input, |r1, r2| DexOp::$variant {
             $field1: r1,
             $field2: r2,
         })
@@ -2039,9 +2039,9 @@ macro_rules! two_reg_case {
 /// Helper function: parses three registers from the input.
 /// It expects at least one space, then a register, a comma, another register,
 /// a comma, and a third register.
-fn parse_three_reg_instruction<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_three_reg_op<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, SmaliRegister, SmaliRegister) -> DexInstruction,
+    F: Fn(SmaliRegister, SmaliRegister, SmaliRegister) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, r1) = parse_register(input)?;
@@ -2052,12 +2052,12 @@ where
     Ok((input, constructor(r1, r2, r3)))
 }
 
-/// Macro for three-register instructions.
+/// Macro for three-register operations.
 /// You supply the enum variant and the field names for each register,
 /// along with the input.
 macro_rules! three_reg_case {
     ($variant:ident, $field1:ident, $field2:ident, $field3:ident, $input:expr) => {
-        parse_three_reg_instruction($input, |r1, r2, r3| DexInstruction::$variant {
+        parse_three_reg_op($input, |r1, r2, r3| DexOp::$variant {
             $field1: r1,
             $field2: r2,
             $field3: r3,
@@ -2065,12 +2065,12 @@ macro_rules! three_reg_case {
     };
 }
 
-/// Helper for one-reg + literal instructions.
+/// Helper for one-reg + literal operations.
 /// It assumes the opcode has already been consumed.
-fn parse_one_reg_and_literal<T, F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_one_reg_and_literal<T, F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
     T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64>,
-    F: Fn(SmaliRegister, T) -> DexInstruction,
+    F: Fn(SmaliRegister, T) -> DexOp,
     <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
     let (input, _) = space1(input)?;
@@ -2082,18 +2082,18 @@ where
 
 macro_rules! one_reg_lit_case {
     ($variant:ident, $field:ident, $lit_ty:ty, $input:expr) => {
-        parse_one_reg_and_literal::<$lit_ty, _>($input, |r, lit| DexInstruction::$variant {
+        parse_one_reg_and_literal::<$lit_ty, _>($input, |r, lit| DexOp::$variant {
             $field: r,
             value: lit,
         })
     };
 }
 
-/// Helper for two-reg + literal instructions.
-fn parse_two_reg_and_literal<T, F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+/// Helper for two-reg + literal operations.
+fn parse_two_reg_and_literal<T, F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
     T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64>,
-    F: Fn(SmaliRegister, SmaliRegister, T) -> DexInstruction,
+    F: Fn(SmaliRegister, SmaliRegister, T) -> DexOp,
     <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
     let (input, _) = space1(input)?;
@@ -2107,7 +2107,7 @@ where
 
 macro_rules! two_reg_lit_case {
     ($variant:ident, $field1:ident, $field2:ident, $lit_ty:ty, $input:expr) => {
-        parse_two_reg_and_literal::<$lit_ty, _>($input, |r1, r2, lit| DexInstruction::$variant {
+        parse_two_reg_and_literal::<$lit_ty, _>($input, |r1, r2, lit| DexOp::$variant {
             $field1: r1,
             $field2: r2,
             literal: lit,
@@ -2115,9 +2115,9 @@ macro_rules! two_reg_lit_case {
     };
 }
 
-fn parse_one_reg_and_fieldref<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_one_reg_and_fieldref<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, FieldRef) -> DexInstruction,
+    F: Fn(SmaliRegister, FieldRef) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, dest) = parse_register(input)?;
@@ -2128,16 +2128,13 @@ where
 
 macro_rules! one_reg_fieldref_case {
     ($variant:ident, $reg:ident, $input:expr) => {
-        parse_one_reg_and_fieldref($input, |reg, field| DexInstruction::$variant {
-            $reg: reg,
-            field,
-        })
+        parse_one_reg_and_fieldref($input, |reg, field| DexOp::$variant { $reg: reg, field })
     };
 }
 
-fn parse_two_reg_and_fieldref<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_two_reg_and_fieldref<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, SmaliRegister, FieldRef) -> DexInstruction,
+    F: Fn(SmaliRegister, SmaliRegister, FieldRef) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, reg1) = parse_register(input)?;
@@ -2150,7 +2147,7 @@ where
 
 macro_rules! two_reg_fieldref_case {
     ($variant:ident, $reg1:ident, $input:expr) => {
-        parse_two_reg_and_fieldref($input, |reg1, object, field| DexInstruction::$variant {
+        parse_two_reg_and_fieldref($input, |reg1, object, field| DexOp::$variant {
             $reg1: reg1,
             object,
             field,
@@ -2158,11 +2155,11 @@ macro_rules! two_reg_fieldref_case {
     };
 }
 
-/// Helper for one-reg + literal instructions.
+/// Helper for one-reg + literal operations.
 /// It assumes the opcode has already been consumed.
-fn parse_one_reg_and_string<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_one_reg_and_string<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, String) -> DexInstruction,
+    F: Fn(SmaliRegister, String) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, reg) = parse_register(input)?;
@@ -2182,16 +2179,16 @@ where
 
 macro_rules! one_reg_string_case {
     ($variant:ident, $field:ident, $string:ident, $input:expr) => {
-        parse_one_reg_and_string($input, |r, lit| DexInstruction::$variant {
+        parse_one_reg_and_string($input, |r, lit| DexOp::$variant {
             $field: r,
             $string: lit,
         })
     };
 }
 
-fn parse_two_reg_and_string<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_two_reg_and_string<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, SmaliRegister, String) -> DexInstruction,
+    F: Fn(SmaliRegister, SmaliRegister, String) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, reg1) = parse_register(input)?;
@@ -2213,7 +2210,7 @@ where
 
 macro_rules! two_reg_string_case {
     ($variant:ident, $reg:ident, $string:ident, $input:expr) => {
-        parse_two_reg_and_string($input, |dest, reg, lit| DexInstruction::$variant {
+        parse_two_reg_and_string($input, |dest, reg, lit| DexOp::$variant {
             dest,
             $reg: reg,
             $string: lit,
@@ -2221,9 +2218,9 @@ macro_rules! two_reg_string_case {
     };
 }
 
-fn parse_one_reg_and_label<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_one_reg_and_label<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, Label) -> DexInstruction,
+    F: Fn(SmaliRegister, Label) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, reg) = parse_register(input)?;
@@ -2234,16 +2231,13 @@ where
 
 macro_rules! one_reg_label_case {
     ($variant:ident, $input:expr) => {
-        parse_one_reg_and_label($input, |reg, offset| DexInstruction::$variant {
-            reg,
-            offset,
-        })
+        parse_one_reg_and_label($input, |reg, offset| DexOp::$variant { reg, offset })
     };
 }
 
-fn parse_two_reg_and_label<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+fn parse_two_reg_and_label<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(SmaliRegister, SmaliRegister, Label) -> DexInstruction,
+    F: Fn(SmaliRegister, SmaliRegister, Label) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, reg1) = parse_register(input)?;
@@ -2256,7 +2250,7 @@ where
 
 macro_rules! two_reg_label_case {
     ($variant:ident, $input:expr) => {
-        parse_two_reg_and_label($input, |reg1, reg2, offset| DexInstruction::$variant {
+        parse_two_reg_and_label($input, |reg1, reg2, offset| DexOp::$variant {
             reg1,
             reg2,
             offset,
@@ -2264,9 +2258,9 @@ macro_rules! two_reg_label_case {
     };
 }
 
-pub fn parse_range_and_method<F>(input: &str, constructor: F) -> IResult<&str, DexInstruction>
+pub fn parse_range_and_method<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
 where
-    F: Fn(RegisterRange, MethodRef) -> DexInstruction,
+    F: Fn(RegisterRange, MethodRef) -> DexOp,
 {
     let (input, _) = space1(input)?;
     let (input, range) = parse_register_range(input)?;
@@ -2277,26 +2271,23 @@ where
 
 macro_rules! range_method_case {
     ($variant:ident, $input:expr) => {
-        parse_range_and_method($input, |range, method| DexInstruction::$variant {
-            range,
-            method,
-        })
+        parse_range_and_method($input, |range, method| DexOp::$variant { range, method })
     };
 }
 
 // Higher level parser for all operations
-pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
+pub fn parse_op(input: &str) -> IResult<&str, DexOp> {
     let (input, op) =
         take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '/').parse(input)?;
     let r = match op {
-        // Invoke instructions
+        // Invoke operations
         "invoke-static" => invoke_case!(InvokeStatic, input),
         "invoke-virtual" => invoke_case!(InvokeVirtual, input),
         "invoke-super" => invoke_case!(InvokeSuper, input),
         "invoke-interface" => invoke_case!(InvokeInterface, input),
         "invoke-direct" => invoke_case!(InvokeDirect, input),
 
-        // One-register instructions.
+        // One-register operations.
         "move-result" => one_reg_case!(MoveResult, dest, input),
         "move-result-wide" => one_reg_case!(MoveResultWide, dest, input),
         "move-result-object" => one_reg_case!(MoveResultObject, dest, input),
@@ -2308,8 +2299,8 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "monitor-exit" => one_reg_case!(MonitorExit, src, input),
         "throw" => one_reg_case!(Throw, src, input),
 
-        // Two register instructions
-        // Group A: Move instructions.
+        // Two register operations
+        // Group A: Move operations.
         "move" => two_reg_case!(Move, dest, src, input),
         "move/from16" => two_reg_case!(MoveFrom16, dest, src, input),
         "move/16" => two_reg_case!(Move16, dest, src, input),
@@ -2321,18 +2312,18 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "move-object/16" => two_reg_case!(MoveObject16, dest, src, input),
         // Group A: Array length.
         "array-length" => two_reg_case!(ArrayLength, dest, array, input),
-        // Group A: Conversion instructions.
+        // Group A: Conversion operations.
         "int-to-byte" => two_reg_case!(IntToByte, dest, src, input),
         "int-to-char" => two_reg_case!(IntToChar, dest, src, input),
         "int-to-short" => two_reg_case!(IntToShort, dest, src, input),
-        // Group A: Unary arithmetic instructions.
+        // Group A: Unary arithmetic operations.
         "neg-int" => two_reg_case!(NegInt, dest, src, input),
         "not-int" => two_reg_case!(NotInt, dest, src, input),
         "neg-long" => two_reg_case!(NegLong, dest, src, input),
         "not-long" => two_reg_case!(NotLong, dest, src, input),
         "neg-float" => two_reg_case!(NegFloat, dest, src, input),
         "neg-double" => two_reg_case!(NegDouble, dest, src, input),
-        // Group C: Conversion arithmetic instructions.
+        // Group C: Conversion arithmetic operations.
         "int-to-long" => two_reg_case!(IntToLong, dest, src, input),
         "int-to-float" => two_reg_case!(IntToFloat, dest, src, input),
         "int-to-double" => two_reg_case!(IntToDouble, dest, src, input),
@@ -2345,7 +2336,7 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "double-to-int" => two_reg_case!(DoubleToInt, dest, src, input),
         "double-to-long" => two_reg_case!(DoubleToLong, dest, src, input),
         "double-to-float" => two_reg_case!(DoubleToFloat, dest, src, input),
-        // Group D: 2addr arithmetic instructions (using reg and src).
+        // Group D: 2addr arithmetic operations (using reg and src).
         "add-int/2addr" => two_reg_case!(AddInt2Addr, reg, src, input),
         "sub-int/2addr" => two_reg_case!(SubInt2Addr, reg, src, input),
         "mul-int/2addr" => two_reg_case!(MulInt2Addr, reg, src, input),
@@ -2379,8 +2370,8 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "div-double/2addr" => two_reg_case!(DivDouble2Addr, reg, src, input),
         "rem-double/2addr" => two_reg_case!(RemDouble2Addr, reg, src, input),
 
-        // Three register instructions
-        // Group B: Array get/put instructions.
+        // Three register operations
+        // Group B: Array get/put operations.
         "aget" => three_reg_case!(AGet, dest, array, index, input),
         "aget-wide" => three_reg_case!(AGetWide, dest, array, index, input),
         "aget-object" => three_reg_case!(AGetObject, dest, array, index, input),
@@ -2395,7 +2386,7 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "aput-byte" => three_reg_case!(APutByte, src, array, index, input),
         "aput-char" => three_reg_case!(APutChar, src, array, index, input),
         "aput-short" => three_reg_case!(APutShort, src, array, index, input),
-        // Group C: Arithmetic instructions (non-2addr and comparisons).
+        // Group C: Arithmetic operations (non-2addr and comparisons).
         "add-int" => three_reg_case!(AddInt, dest, src1, src2, input),
         "sub-int" => three_reg_case!(SubInt, dest, src1, src2, input),
         "mul-int" => three_reg_case!(MulInt, dest, src1, src2, input),
@@ -2428,14 +2419,14 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "mul-double" => three_reg_case!(MulDouble, dest, src1, src2, input),
         "div-double" => three_reg_case!(DivDouble, dest, src1, src2, input),
         "rem-double" => three_reg_case!(RemDouble, dest, src1, src2, input),
-        // Comparison instructions.
+        // Comparison operations.
         "cmpl-float" => three_reg_case!(CmplFloat, dest, src1, src2, input),
         "cmpg-float" => three_reg_case!(CmpgFloat, dest, src1, src2, input),
         "cmpl-double" => three_reg_case!(CmplDouble, dest, src1, src2, input),
         "cmpg-double" => three_reg_case!(CmpgDouble, dest, src1, src2, input),
         "cmp-long" => three_reg_case!(CmpLong, dest, src1, src2, input),
 
-        // One-register literal instructions (constants):
+        // One-register literal operations (constants):
         "const" => one_reg_lit_case!(Const, dest, i32, input),
         "const/4" => one_reg_lit_case!(Const4, dest, i8, input),
         "const/16" => one_reg_lit_case!(Const16, dest, i16, input),
@@ -2443,7 +2434,7 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "const-wide/16" => one_reg_lit_case!(ConstWide16, dest, i16, input),
         "const-wide/32" => one_reg_lit_case!(ConstWide32, dest, i32, input),
 
-        // Two-register literal instructions (lit8):
+        // Two-register literal operations (lit8):
         "add-int/lit8" => two_reg_lit_case!(AddIntLit8, dest, src, i8, input),
         "rsub-int/lit8" => two_reg_lit_case!(RSubIntLit8, dest, src, i8, input),
         "mul-int/lit8" => two_reg_lit_case!(MulIntLit8, dest, src, i8, input),
@@ -2456,7 +2447,7 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "shr-int/lit8" => two_reg_lit_case!(ShrIntLit8, dest, src, i8, input),
         "ushr-int/lit8" => two_reg_lit_case!(UshrIntLit8, dest, src, i8, input),
 
-        // Two-register literal instructions (lit16):
+        // Two-register literal operations (lit16):
         "add-int/lit16" => two_reg_lit_case!(AddIntLit16, dest, src, i16, input),
         "rsub-int" => two_reg_lit_case!(RSubIntLit16, dest, src, i16, input),
         "mul-int/lit16" => two_reg_lit_case!(MulIntLit16, dest, src, i16, input),
@@ -2516,15 +2507,15 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         // Gotos = 1 label
         "goto" => {
             let (_, offset) = preceded(space1, parse_label).parse(input)?;
-            IResult::Ok((input, DexInstruction::Goto { offset }))
+            IResult::Ok((input, DexOp::Goto { offset }))
         }
         "goto/16" => {
             let (_, offset) = preceded(space1, parse_label).parse(input)?;
-            IResult::Ok((input, DexInstruction::Goto16 { offset }))
+            IResult::Ok((input, DexOp::Goto16 { offset }))
         }
         "goto/32" => {
             let (_, offset) = preceded(space1, parse_label).parse(input)?;
-            IResult::Ok((input, DexInstruction::Goto32 { offset }))
+            IResult::Ok((input, DexOp::Goto32 { offset }))
         }
 
         // One reg & label
@@ -2544,7 +2535,7 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
             let (input, registers) = parse_register_list(input)?;
             let (input, _) = delimited(space0, char(','), space0).parse(input)?;
             let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
-            Ok((input, DexInstruction::FilledNewArray { registers, class }))
+            Ok((input, DexOp::FilledNewArray { registers, class }))
         }
         "filled-new-array/range" => {
             let (input, _) = space1(input)?;
@@ -2553,7 +2544,7 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
             let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
             Ok((
                 input,
-                DexInstruction::FilledNewArrayRange {
+                DexOp::FilledNewArrayRange {
                     registers: range,
                     class,
                 },
@@ -2582,17 +2573,17 @@ pub fn parse_instruction(input: &str) -> IResult<&str, DexInstruction> {
         "invoke-custom/range" => parse_invoke_custom_range(input),
         "const/high16" => parse_const_high16(input),
         "const-wide/high16" => parse_const_wide_high16(input),
-        "nop" => IResult::Ok((input, DexInstruction::Nop)),
-        "return-void" => IResult::Ok((input, DexInstruction::ReturnVoid)),
+        "nop" => IResult::Ok((input, DexOp::Nop)),
+        "return-void" => IResult::Ok((input, DexOp::ReturnVoid)),
 
         _ => {
-            panic!("Unhandled instruction {op} {input}")
+            panic!("Unhandled operation {op} {input}")
         }
     };
     match r {
         Ok(_) => r,
         Err(e) => {
-            panic!("Error parsing instruction {op} {input}: {e}")
+            panic!("Error parsing operation {op} {input}: {e}")
         }
     }
 }
@@ -2604,11 +2595,11 @@ mod tests {
     #[test]
     fn test_const_string() {
         let input = r#"const-string v0, "builder""#;
-        let (rest, instr) = parse_instruction(input).unwrap();
+        let (rest, instr) = parse_op(input).unwrap();
         assert!(rest.trim().is_empty());
         assert_eq!(
             instr,
-            DexInstruction::ConstString {
+            DexOp::ConstString {
                 dest: v(0),
                 value: "builder".to_owned()
             }
@@ -2626,7 +2617,7 @@ mod tests {
     #[test]
     fn test_invoke_static() {
         let input = r#"invoke-static {p1, p2, v0, v1}, Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
-        let (rest, instr) = parse_instruction(input).unwrap();
+        let (rest, instr) = parse_op(input).unwrap();
         assert!(rest.trim().is_empty());
         let expected_method = MethodRef {
             class: "Landroidx/core/content/res/TypedArrayUtils;".to_owned(),
@@ -2635,7 +2626,7 @@ mod tests {
         };
         assert_eq!(
             instr,
-            DexInstruction::InvokeStatic {
+            DexOp::InvokeStatic {
                 registers: vec![p(1), p(2), v(0), v(1)],
                 method: expected_method,
             }
@@ -2645,7 +2636,7 @@ mod tests {
     #[test]
     fn test_invoke_direct() {
         let input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
-        let (rest, instr) = parse_instruction(input).unwrap();
+        let (rest, instr) = parse_op(input).unwrap();
         assert!(rest.trim().is_empty());
         let expected_method = MethodRef {
             class: "Ljava/lang/Object;".to_owned(),
@@ -2654,7 +2645,7 @@ mod tests {
         };
         assert_eq!(
             instr,
-            DexInstruction::InvokeDirect {
+            DexOp::InvokeDirect {
                 registers: vec![p(0)],
                 method: expected_method,
             }
@@ -2686,11 +2677,11 @@ mod tests {
     #[test]
     fn test_filled_new_array() {
         let input = "filled-new-array {v0, v1}, Ljava/lang/String;";
-        let (rest, instr) = parse_instruction(input).unwrap();
+        let (rest, instr) = parse_op(input).unwrap();
         assert!(rest.is_empty());
         assert_eq!(
             instr,
-            DexInstruction::FilledNewArray {
+            DexOp::FilledNewArray {
                 registers: vec![v(0), v(1)],
                 class: "Ljava/lang/String;".to_string()
             }
@@ -2700,11 +2691,11 @@ mod tests {
     #[test]
     fn test_filled_new_array_range() {
         let input = "filled-new-array/range {v0 .. v2}, [I";
-        let (rest, instr) = parse_instruction(input).unwrap();
+        let (rest, instr) = parse_op(input).unwrap();
         assert!(rest.is_empty());
         assert_eq!(
             instr,
-            DexInstruction::FilledNewArrayRange {
+            DexOp::FilledNewArrayRange {
                 registers: RegisterRange {
                     start: v(0),
                     end: v(2)

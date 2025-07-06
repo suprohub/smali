@@ -1,6 +1,6 @@
 use smali::find_smali_files;
-use smali::smali_instructions::{DexInstruction, v};
-use smali::types::SmaliInstruction::Instruction;
+use smali::smali_ops::{DexOp, v};
+use smali::types::SmaliOp::Op;
 use smali::types::*;
 use std::env;
 use std::error::Error;
@@ -59,13 +59,14 @@ fn process_apk(apk_file: &str) -> Result<(), Box<dyn Error>> {
             // Patch all the methods returning a boolean
             for m in c.methods.iter_mut() {
                 if m.signature.result == TypeSignature::Bool && m.signature.args.is_empty() {
-                    let mut new_instructions = vec![];
-                    new_instructions.push(Instruction(DexInstruction::Const4 {
-                        dest: v(0),
-                        value: 0,
-                    })); // "const/4 v0, 0x0" - Set v0 to false
-                    new_instructions.push(Instruction(DexInstruction::Return { src: v(0) })); //  "return v0" - return v0
-                    m.instructions = new_instructions;
+                    let new_operations = vec![
+                        Op(DexOp::Const4 {
+                            dest: v(0),
+                            value: 0,
+                        }), // "const/4 v0, 0x0" - Set v0 to false
+                        Op(DexOp::Return { src: v(0) }), //  "return v0" - return v0
+                    ];
+                    m.ops = new_operations;
                     m.locals = 1;
                     println!(
                         "{} method {} successfully patched.",

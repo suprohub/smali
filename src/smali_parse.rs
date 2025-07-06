@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use crate::smali_instructions::parse_instruction as parse_dex_instruction;
-use crate::smali_instructions::{Label, parse_label, parse_literal_int};
+use crate::smali_ops::parse_op as parse_dex_op;
+use crate::smali_ops::{Label, parse_label, parse_literal_int};
 use crate::types::*;
 use nom::Err::Failure;
 use nom::branch::alt;
@@ -460,41 +460,41 @@ fn parse_sparse_switch(input: &str) -> IResult<&str, SparseSwitchDirective> {
     Ok((input, SparseSwitchDirective { entries }))
 }
 
-fn parse_instruction(smali: &str) -> IResult<&str, SmaliInstruction> {
+fn parse_op(smali: &str) -> IResult<&str, SmaliOp> {
     // Line
     if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(".line")).parse(smali) {
         let (o, n) = take_until_eol(o)?;
-        IResult::Ok((o, SmaliInstruction::Line(n.parse::<u32>().unwrap())))
+        IResult::Ok((o, SmaliOp::Line(n.parse::<u32>().unwrap())))
     }
     // Label
     else if let IResult::Ok((o, _)) = ws(tag::<&str, &str, Error<&str>>(":")).parse(smali) {
         let (o, n) = take_until_eol(o)?;
-        IResult::Ok((o, SmaliInstruction::Label(Label(n.to_string()))))
+        IResult::Ok((o, SmaliOp::Label(Label(n.to_string()))))
     }
     // CatchDirective
     else if let IResult::Ok((o, c)) = parse_catch_directive(smali) {
-        IResult::Ok((o, SmaliInstruction::Catch(c)))
+        IResult::Ok((o, SmaliOp::Catch(c)))
     }
     // CatchAllDirective
     else if let IResult::Ok((o, c)) = parse_catchall_directive(smali) {
-        IResult::Ok((o, SmaliInstruction::Catch(c)))
+        IResult::Ok((o, SmaliOp::Catch(c)))
     }
     // ArrayDataDirective
     else if let IResult::Ok((o, ad)) = parse_array_data(smali) {
-        IResult::Ok((o, SmaliInstruction::ArrayData(ad)))
+        IResult::Ok((o, SmaliOp::ArrayData(ad)))
     }
     // PackedSwitchDirective
     else if let IResult::Ok((o, ps)) = parse_packed_switch(smali) {
-        IResult::Ok((o, SmaliInstruction::PackedSwitch(ps)))
+        IResult::Ok((o, SmaliOp::PackedSwitch(ps)))
     }
     // SparseSwitchDirective
     else if let IResult::Ok((o, ss)) = parse_sparse_switch(smali) {
-        IResult::Ok((o, SmaliInstruction::SparseSwitch(ss)))
+        IResult::Ok((o, SmaliOp::SparseSwitch(ss)))
     }
-    // Actual instruction
+    // Actual op
     else if let IResult::Ok((o, n)) = take_until_eol(smali) {
-        let (_, dex_instruction) = parse_dex_instruction(n)?;
-        IResult::Ok((o, SmaliInstruction::Instruction(dex_instruction)))
+        let (_, dex_op) = parse_dex_op(n)?;
+        IResult::Ok((o, SmaliOp::Op(dex_op)))
     }
     // Anything else - failure
     else {
@@ -583,7 +583,7 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
         locals: 0, // Will be set later
         params: vec![],
         annotations: vec![],
-        instructions: vec![],
+        ops: vec![],
     };
 
     let mut input = o;
@@ -642,10 +642,10 @@ pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
             found = true;
         }
 
-        // Try to parse instructions if nothing else matches
+        // Try to parse operations if nothing else matches
         if !found {
-            if let IResult::Ok((o, i)) = parse_instruction(input) {
-                method.instructions.push(i);
+            if let IResult::Ok((o, i)) = parse_op(input) {
+                method.ops.push(i);
                 input = o;
                 found = true;
             }
@@ -987,7 +987,7 @@ mod tests {
         assert!(rem.is_empty());
         assert_eq!(method.name, "isInitialized");
         assert_eq!(method.annotations.len(), 1); // Signature annotation
-        assert_eq!(method.instructions.len(), 4);
+        assert_eq!(method.ops.len(), 4);
         assert_eq!(method.locals, 1);
         assert_eq!(method.modifiers.len(), 3); // private, static, final
     }
