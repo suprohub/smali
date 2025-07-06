@@ -559,6 +559,7 @@ impl FromStr for AnnotationVisibility {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "build" => Self::Build,
+            "runtime" => Self::Runtime,
             "system" => Self::System,
             _ => {
                 return Err(SmaliError {
