@@ -9,14 +9,14 @@ use crate::dex::dex_file::{
 use crate::smali_instructions::{DexInstruction, Label};
 use crate::smali_parse::parse_class;
 use crate::smali_write::write_class;
+use nom::Err::Failure;
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while};
 use nom::character::complete::{alphanumeric0, char};
 use nom::error::ErrorKind;
 use nom::multi::many0;
 use nom::sequence::terminated;
-use nom::Err::Failure;
-use nom::IResult;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::hash::{Hash, Hasher};
@@ -1074,8 +1074,7 @@ mod tests {
 
     #[test]
     fn test_method_signature2() {
-        let ts =
-            "<R2:Ljava/lang/Object;>(Lcom/strobel/core/Selector<-TR;+TR2;>;)Ljava/lang/Iterable<TR2;>;^Ljava/lang/Exception;";
+        let ts = "<R2:Ljava/lang/Object;>(Lcom/strobel/core/Selector<-TR;+TR2;>;)Ljava/lang/Iterable<TR2;>;^Ljava/lang/Exception;";
         let m = MethodSignature::from_jni(ts);
         println!("{m:?}");
         assert_eq!(m.to_jni(), ts);

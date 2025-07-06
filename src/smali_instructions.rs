@@ -5,11 +5,11 @@ use nom::combinator::opt;
 use nom::multi::separated_list0;
 use nom::sequence::pair;
 use nom::{
+    IResult,
     branch::alt,
     bytes::complete::{tag, take_until, take_while1},
     character::complete::{alphanumeric1, char, digit1, multispace0, space0, space1},
     sequence::{delimited, preceded},
-    IResult,
 };
 use std::fmt;
 use std::fmt::Debug;

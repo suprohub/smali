@@ -1,5 +1,5 @@
 use smali::find_smali_files;
-use smali::smali_instructions::{v, DexInstruction};
+use smali::smali_instructions::{DexInstruction, v};
 use smali::types::SmaliInstruction::Instruction;
 use smali::types::*;
 use std::env;

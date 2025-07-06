@@ -1,6 +1,8 @@
 use crate::smali_instructions::parse_instruction as parse_dex_instruction;
-use crate::smali_instructions::{parse_label, parse_literal_int, Label};
+use crate::smali_instructions::{Label, parse_label, parse_literal_int};
 use crate::types::*;
+use nom::Err::Failure;
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag, take_while, take_while1};
 use nom::character::complete::{
@@ -11,8 +13,6 @@ use nom::combinator::{opt, value};
 use nom::error::{Error, ErrorKind};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, preceded, terminated};
-use nom::Err::Failure;
-use nom::IResult;
 
 fn ws<'a, F: 'a, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
 where
@@ -727,7 +727,7 @@ pub(crate) fn parse_class(smali: &str) -> IResult<&str, SmaliClass> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{parse_typesignature, AnnotationValue};
+    use crate::types::{AnnotationValue, parse_typesignature};
     use std::fs;
 
     #[test]

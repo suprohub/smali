@@ -1,6 +1,6 @@
 /* Dex file format structures */
 
-use crate::dex::encoded_values::{read_encoded_array, EncodedValue};
+use crate::dex::encoded_values::{EncodedValue, read_encoded_array};
 use crate::dex::error::DexError;
 use crate::dex::{
     read_u1, read_u2, read_u4, read_uleb128, read_uleb128p1, read_x, write_u1, write_u2, write_u4,
