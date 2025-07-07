@@ -10,7 +10,7 @@ use nom::character::complete::{
     alphanumeric1, char, multispace0, multispace1, newline, none_of, not_line_ending, one_of,
     space0, space1,
 };
-use nom::combinator::{opt, value};
+use nom::combinator::{opt, recognize, value};
 use nom::error::{Error, ErrorKind, ParseError};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, preceded, terminated};
@@ -411,11 +411,11 @@ pub fn parse_array_data(input: &str) -> IResult<&str, ArrayDataDirective> {
 
 /// Parse the packed-switch directive data. Example input:
 ///
-///     .packed-switch 0x7f060395
-///         :pswitch_4
-///         :pswitch_5
-///         :pswitch_1
-///     .end packed-switch
+///    .packed-switch 0x7f060395
+///        :pswitch_4
+///        :pswitch_5
+///        :pswitch_1
+///    .end packed-switch
 fn parse_packed_switch(input: &str) -> IResult<&str, PackedSwitchDirective> {
     // Parse the header.
     let (input, _) = tag(".packed-switch").parse(input)?;
@@ -505,54 +505,45 @@ fn parse_op(smali: &str) -> IResult<&str, SmaliOp> {
     }
 }
 
-fn parse_param_block(input: &str) -> IResult<&str, SmaliParam> {
+pub fn parse_param_block(input: &str) -> IResult<&str, SmaliParam> {
     let (input, _) = tag(".param")(input)?;
-    let (input, _) = space1(input)?;
+    let (input, _) = multispace1(input)?;
 
-    // Parse register and optional name
-    let (input, register) = take_while1(|c: char| !c.is_whitespace() && c != ',')(input)?;
-    let (input, name) = opt(preceded(
-        pair(space0, char(',')),
-        preceded(space0, quoted()),
-    ))
-    .parse(input)?;
+    let (input, register) =
+        take_while1(|c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_')(input)?;
 
-    // Skip type comment if present
-    let (input, _) = opt(preceded(
-        space0,
-        preceded(char('#'), take_while1(|c| c != '\n')),
-    ))
-    .parse(input)?;
-    let (input, _) = take_until_eol(input)?;
+    let name_parser = preceded((space0, tag(","), space0), quoted());
 
-    let mut param = SmaliParam {
-        register: register.to_string(),
-        name: name.map(|s| s.to_string()),
-        annotations: vec![],
+    let (input, name) = opt(name_parser).parse(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = opt(preceded(tag("#"), pair(space0, take_until_eol))).parse(input)?;
+    let (input, _) = opt(newline).parse(input)?;
+
+    let mut annotations = Vec::new();
+    let mut current_input = input;
+    while let Ok((next_input, annotation)) = parse_annotation(current_input, false) {
+        annotations.push(annotation);
+        current_input = next_input;
+    }
+
+    let (current_input, _) = if !annotations.is_empty() {
+        preceded(
+            multispace0,
+            recognize((tag(".end"), multispace1, tag("param"))),
+        )
+        .parse(current_input)?
+    } else {
+        (current_input, "")
     };
 
-    let mut input = input;
-
-    loop {
-        if let Ok((i, _)) = ws(tag::<&str, &str, Error<&str>>(".end param")).parse(input) {
-            return Ok((i, param));
-        }
-
-        if let Ok((i, a)) = parse_annotation(input, false) {
-            param.annotations.push(a);
-            input = i;
-            continue;
-        }
-
-        if let Ok((i, a)) = parse_annotation(input, true) {
-            param.annotations.push(a);
-            input = i;
-            continue;
-        }
-
-        let (i, _) = take_until_eol(input)?;
-        input = i;
-    }
+    Ok((
+        current_input,
+        SmaliParam {
+            register: register.to_string(),
+            name: name.map(|s| s.to_string()),
+            annotations,
+        },
+    ))
 }
 
 pub fn parse_method(smali: &str) -> IResult<&str, SmaliMethod> {
@@ -955,6 +946,15 @@ mod tests {
         .end param"#;
         let (rem, _) = parse_param_block(input).unwrap();
         assert!(rem.is_empty());
+    }
+
+    #[test]
+    fn test_parse_param_with_string() {
+        let input = r#".param p0, "_this"    # Landroidx/core/internal/view/SupportMenuItem;"#;
+        let (_rem, param) = parse_param_block(input).unwrap();
+        assert_eq!(param.register, "p0");
+        assert_eq!(param.name, Some("_this".to_string()));
+        assert!(param.annotations.is_empty());
     }
 
     #[test]
