@@ -50,7 +50,7 @@ pub fn find_smali_files(dir: &Path) -> Result<Vec<SmaliClass>, SmaliError> {
 #[cfg(test)]
 mod tests {
     use crate::types::{MethodSignature, ObjectIdentifier, SmaliClass, TypeSignature};
-    use std::path::Path;
+    use std::fs;
 
     #[test]
     fn object_identifier_to_jni() {
@@ -75,12 +75,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_write() {
-        let dex = SmaliClass::read_from_file(Path::new("tests/OkHttpClient.smali")).unwrap();
-        let smali = dex.to_smali();
-
-        // Attempt to parse the output
-        let dex = SmaliClass::from_smali(&smali).unwrap();
-        println!("{}\n", dex.to_smali());
+    fn read_write() {
+        for path in fs::read_dir("tests").unwrap() {
+            let path = path.unwrap();
+            let class = fs::read_to_string(path.path()).unwrap();
+            let parsed = SmaliClass::from_smali(&class).unwrap().to_smali();
+            println!("{:?}:\n{class}\nparsed:\n{parsed}", path.file_name())
+        }
     }
 }

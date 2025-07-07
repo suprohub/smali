@@ -10,7 +10,7 @@ use nom::character::complete::{
     alphanumeric1, char, multispace0, multispace1, newline, none_of, not_line_ending, one_of,
     space0, space1,
 };
-use nom::combinator::{opt, recognize, value};
+use nom::combinator::{opt, value};
 use nom::error::{Error, ErrorKind, ParseError};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, preceded, terminated};
@@ -507,8 +507,7 @@ fn parse_op(smali: &str) -> IResult<&str, SmaliOp> {
 
 pub fn parse_param_block(input: &str) -> IResult<&str, SmaliParam> {
     let (input, _) = tag(".param")(input)?;
-    let (input, _) = multispace1(input)?;
-
+    let (input, _) = space1(input)?;
     let (input, register) =
         take_while1(|c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_')(input)?;
 
@@ -526,15 +525,7 @@ pub fn parse_param_block(input: &str) -> IResult<&str, SmaliParam> {
         current_input = next_input;
     }
 
-    let (current_input, _) = if !annotations.is_empty() {
-        preceded(
-            multispace0,
-            recognize((tag(".end"), multispace1, tag("param"))),
-        )
-        .parse(current_input)?
-    } else {
-        (current_input, "")
-    };
+    let (current_input, _) = opt(preceded(space0, tag(".end param"))).parse(current_input)?;
 
     Ok((
         current_input,

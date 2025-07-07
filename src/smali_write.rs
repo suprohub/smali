@@ -1,4 +1,6 @@
-use crate::types::{AnnotationValue, Modifier, SmaliAnnotation, SmaliClass, SmaliMethod, SmaliOp};
+use crate::types::{
+    AnnotationValue, Modifier, SmaliAnnotation, SmaliClass, SmaliMethod, SmaliOp, SmaliParam,
+};
 
 fn write_modifiers(mods: &Vec<Modifier>) -> String {
     let mut out = "".to_string();
@@ -68,9 +70,42 @@ fn write_annotation(ann: &SmaliAnnotation, subannotation: bool, indented: bool) 
 
     out.push_str(indent);
     out.push_str(end_tag);
-    out.push('\n');
+
+    if indented {
+        out.push('\n');
+    }
 
     out
+}
+
+fn write_param(param: &SmaliParam) -> String {
+    let mut output = String::new();
+
+    // Start the .param directive
+    output.push_str(".param ");
+    output.push_str(&param.register);
+
+    // Add name if present
+    if let Some(name) = &param.name {
+        output.push_str(", \"");
+        output.push_str(name);
+        output.push('"');
+    }
+
+    // Handle annotations if present
+    if !param.annotations.is_empty() {
+        output.push('\n');
+
+        // Write each annotation
+        for annotation in &param.annotations {
+            output.push_str(&write_annotation(annotation, true, true));
+        }
+
+        // Close the param block
+        output.push_str(".end param");
+    }
+
+    output
 }
 
 fn write_method(method: &SmaliMethod) -> String {
@@ -79,12 +114,25 @@ fn write_method(method: &SmaliMethod) -> String {
         out.push_str("constructor ");
     }
     out.push_str(&format!("{}{}\n", method.name, method.signature.to_jni()));
-    if !method.ops.is_empty() {
-        out.push_str(&format!("    .locals {:}\n", method.locals));
-    }
 
+    // Write method annotations
     for a in &method.annotations {
         out.push_str(&write_annotation(a, false, true));
+    }
+
+    // Write parameters
+    for param in &method.params {
+        let param_str = write_param(param);
+        // Indent parameter lines
+        for line in param_str.lines() {
+            out.push_str("    ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    if !method.ops.is_empty() {
+        out.push_str(&format!("    .locals {:}\n", method.locals));
     }
 
     for i in &method.ops {
