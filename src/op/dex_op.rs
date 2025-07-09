@@ -1,99 +1,44 @@
-use crate::types::{parse_methodsignature, parse_typesignature};
-use nom::Parser;
-use nom::bytes::complete::escaped;
-use nom::character::complete::{none_of, one_of};
-use nom::combinator::opt;
-use nom::multi::separated_list0;
-use nom::sequence::pair;
+//! TODO:
+//! What about multispace0 and space0? Where i can set this?
+//! Is there any .smali grammar docs? Like c++
+
+use std::{
+    borrow::Cow,
+    fmt::{self, Debug},
+};
+
 use nom::{
-    IResult,
+    IResult, Parser,
     branch::alt,
-    bytes::complete::{tag, take_until, take_while1},
-    character::complete::{alphanumeric1, char, digit1, multispace0, space0, space1},
+    bytes::complete::{tag, take_while1},
+    character::complete::{alphanumeric1, char, digit1, space0, space1},
+    combinator::{map, map_res},
+    error::{Error, ErrorKind},
+    multi::separated_list0,
     sequence::{delimited, preceded},
 };
-use std::fmt;
-use std::fmt::Debug;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Label(pub String);
-
-// A helper function to determine valid characters for a label.
-fn is_label_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '$'
-}
-
-/// Parse a label in smali syntax, e.g. ":cond_0"
-pub fn parse_label(input: &str) -> IResult<&str, Label> {
-    // Expect a colon first, then one or more valid characters.
-    let (input, _) = tag(":").parse(input)?;
-    let (input, label_body) = take_while1(is_label_char).parse(input)?;
-    Ok((input, Label(label_body.to_string())))
-}
-
-impl fmt::Display for Label {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Prepend a colon when printing
-        write!(f, ":{}", self.0)
-    }
-}
-
-/// A symbolic reference to a method.
-#[derive(Debug, Clone, PartialEq)]
-pub struct MethodRef {
-    /// The fully qualified class name, e.g. "Lcom/example/MyClass;".
-    pub class: String,
-    /// The method name.
-    pub name: String,
-    /// The method descriptor (signature), e.g. "(I)V".
-    pub descriptor: String,
-}
-
-impl fmt::Display for MethodRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Example: Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
-        write!(f, "{}->{}{}", self.class, self.name, self.descriptor)
-    }
-}
-
-/// A symbolic reference to a field.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldRef {
-    /// The fully qualified class name, e.g. "Lcom/example/MyClass;".
-    pub class: String,
-    /// The field name.
-    pub name: String,
-    /// The field descriptor (type), e.g. "I" for int.
-    pub descriptor: String,
-}
-
-impl fmt::Display for FieldRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Example: Lcom/example/MyClass;->myField:I
-        write!(f, "{}->{}:{}", self.class, self.name, self.descriptor)
-    }
-}
+use crate::{
+    field_ref::{FieldRef, parse_field_ref},
+    method_ref::{MethodRef, parse_method_ref},
+    op::{Label, parse_label},
+    parse_int_lit, parse_string_lit,
+    signature::type_signature::{TypeSignature, parse_typesignature},
+};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SmaliRegister {
+pub enum Register {
     Parameter(u16),
     Local(u16),
 }
 
-pub fn p(u: u16) -> SmaliRegister {
-    SmaliRegister::Parameter(u)
-}
-pub fn v(u: u16) -> SmaliRegister {
-    SmaliRegister::Local(u)
-}
-
-impl fmt::Display for SmaliRegister {
+impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Here we don't know the method context so we just print the raw value.
         // In a full implementation you would convert using the method context.
         match self {
-            SmaliRegister::Parameter(n) => write!(f, "p{n}"),
-            SmaliRegister::Local(n) => write!(f, "v{n}"),
+            Register::Parameter(n) => write!(f, "p{n}"),
+            Register::Local(n) => write!(f, "v{n}"),
         }
     }
 }
@@ -101,8 +46,8 @@ impl fmt::Display for SmaliRegister {
 /// A symbolic range of registers as written in smali, e.g. "{v0 .. v6}"
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegisterRange {
-    pub start: SmaliRegister,
-    pub end: SmaliRegister,
+    pub start: Register,
+    pub end: Register,
 }
 
 impl fmt::Display for RegisterRange {
@@ -118,1004 +63,1004 @@ impl fmt::Display for RegisterRange {
 /// (e.g. for strings, classes, methods, fields, call sites, prototypes) are stored
 /// directly rather than as indices.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DexOp {
+pub enum DexOp<'a> {
     // Group A: constants, moves, returns, etc.
     ConstString {
-        dest: SmaliRegister,
-        value: String,
+        dest: Register,
+        value: StringOrTypeSig<'a>,
     },
     ConstStringJumbo {
-        dest: SmaliRegister,
-        value: String,
+        dest: Register,
+        value: StringOrTypeSig<'a>,
     },
     Nop,
     Move {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveFrom16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     Move16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveWide {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveWideFrom16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveWide16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveObject {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveObjectFrom16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveObject16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     MoveResult {
-        dest: SmaliRegister,
+        dest: Register,
     },
     MoveResultWide {
-        dest: SmaliRegister,
+        dest: Register,
     },
     MoveResultObject {
-        dest: SmaliRegister,
+        dest: Register,
     },
     MoveException {
-        dest: SmaliRegister,
+        dest: Register,
     },
     ReturnVoid,
     Return {
-        src: SmaliRegister,
+        src: Register,
     },
     ReturnWide {
-        src: SmaliRegister,
+        src: Register,
     },
     ReturnObject {
-        src: SmaliRegister,
+        src: Register,
     },
     Const4 {
-        dest: SmaliRegister,
+        dest: Register,
         value: i8,
     },
     Const16 {
-        dest: SmaliRegister,
+        dest: Register,
         value: i16,
     },
     Const {
-        dest: SmaliRegister,
+        dest: Register,
         value: i32,
     },
     ConstHigh16 {
-        dest: SmaliRegister,
+        dest: Register,
         value: i16,
     },
     ConstWide16 {
-        dest: SmaliRegister,
+        dest: Register,
         value: i16,
     },
     ConstWide32 {
-        dest: SmaliRegister,
+        dest: Register,
         value: i32,
     },
     ConstWide {
-        dest: SmaliRegister,
+        dest: Register,
         value: i64,
     },
     ConstWideHigh16 {
-        dest: SmaliRegister,
+        dest: Register,
         value: i16,
     },
     ConstClass {
-        dest: SmaliRegister,
-        class: String,
+        dest: Register,
+        class: StringOrTypeSig<'a>,
     },
     MonitorEnter {
-        src: SmaliRegister,
+        src: Register,
     },
     MonitorExit {
-        src: SmaliRegister,
+        src: Register,
     },
     CheckCast {
-        dest: SmaliRegister,
-        class: String,
+        dest: Register,
+        class: StringOrTypeSig<'a>,
     },
     InstanceOf {
-        dest: SmaliRegister,
-        src: SmaliRegister,
-        class: String,
+        dest: Register,
+        src: Register,
+        class: StringOrTypeSig<'a>,
     },
     ArrayLength {
-        dest: SmaliRegister,
-        array: SmaliRegister,
+        dest: Register,
+        array: Register,
     },
     NewInstance {
-        dest: SmaliRegister,
-        class: String,
+        dest: Register,
+        class: StringOrTypeSig<'a>,
     },
     NewArray {
-        dest: SmaliRegister,
-        size_reg: SmaliRegister,
-        class: String,
+        dest: Register,
+        size_reg: Register,
+        class: StringOrTypeSig<'a>,
     },
     FilledNewArray {
-        registers: Vec<SmaliRegister>,
-        class: String,
+        registers: Vec<Register>,
+        class: StringOrTypeSig<'a>,
     },
     FilledNewArrayRange {
         registers: RegisterRange,
-        class: String,
+        class: StringOrTypeSig<'a>,
     },
     FillArrayData {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     Throw {
-        src: SmaliRegister,
+        src: Register,
     },
     Goto {
-        offset: Label,
+        offset: Label<'a>,
     },
     Goto16 {
-        offset: Label,
+        offset: Label<'a>,
     },
     Goto32 {
-        offset: Label,
+        offset: Label<'a>,
     },
     PackedSwitch {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     SparseSwitch {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     CmplFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     CmpgFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     CmplDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     CmpgDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     CmpLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
 
     // Group B: Array, field, and invocation operations.
     AGet {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     AGetWide {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     AGetObject {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     AGetBoolean {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     AGetByte {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     AGetChar {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     AGetShort {
-        dest: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        dest: Register,
+        array: Register,
+        index: Register,
     },
     APut {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     APutWide {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     APutObject {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     APutBoolean {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     APutByte {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     APutChar {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     APutShort {
-        src: SmaliRegister,
-        array: SmaliRegister,
-        index: SmaliRegister,
+        src: Register,
+        array: Register,
+        index: Register,
     },
     IGet {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IGetWide {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IGetObject {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IGetBoolean {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IGetByte {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IGetChar {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IGetShort {
-        dest: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPut {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPutWide {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPutObject {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPutBoolean {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPutByte {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPutChar {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     IPutShort {
-        src: SmaliRegister,
-        object: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        object: Register,
+        field: FieldRef<'a>,
     },
     SGet {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SGetWide {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SGetObject {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SGetBoolean {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SGetByte {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SGetChar {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SGetShort {
-        dest: SmaliRegister,
-        field: FieldRef,
+        dest: Register,
+        field: FieldRef<'a>,
     },
     SPut {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     SPutWide {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     SPutObject {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     SPutBoolean {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     SPutByte {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     SPutChar {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     SPutShort {
-        src: SmaliRegister,
-        field: FieldRef,
+        src: Register,
+        field: FieldRef<'a>,
     },
     InvokeVirtual {
-        registers: Vec<SmaliRegister>,
-        method: MethodRef,
+        registers: Vec<Register>,
+        method: MethodRef<'a>,
     },
     InvokeSuper {
-        registers: Vec<SmaliRegister>,
-        method: MethodRef,
+        registers: Vec<Register>,
+        method: MethodRef<'a>,
     },
     InvokeInterface {
-        registers: Vec<SmaliRegister>,
-        method: MethodRef,
+        registers: Vec<Register>,
+        method: MethodRef<'a>,
     },
     InvokeVirtualRange {
         range: RegisterRange,
-        method: MethodRef,
+        method: MethodRef<'a>,
     },
     InvokeSuperRange {
         range: RegisterRange,
-        method: MethodRef,
+        method: MethodRef<'a>,
     },
     InvokeDirectRange {
         range: RegisterRange,
-        method: MethodRef,
+        method: MethodRef<'a>,
     },
     InvokeStaticRange {
         range: RegisterRange,
-        method: MethodRef,
+        method: MethodRef<'a>,
     },
     InvokeInterfaceRange {
         range: RegisterRange,
-        method: MethodRef,
+        method: MethodRef<'a>,
     },
     InvokeDirect {
-        registers: Vec<SmaliRegister>,
-        method: MethodRef,
+        registers: Vec<Register>,
+        method: MethodRef<'a>,
     },
     InvokeStatic {
-        registers: Vec<SmaliRegister>,
-        method: MethodRef,
+        registers: Vec<Register>,
+        method: MethodRef<'a>,
     },
 
     // Group C: Arithmetic operations (non-2addr).
     AddInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     SubInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     MulInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     DivInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     RemInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     AndInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     OrInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     XorInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     ShlInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     ShrInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     UshrInt {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     AddLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     SubLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     MulLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     DivLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     RemLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     AndLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     OrLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     XorLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     ShlLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     ShrLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     UshrLong {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     AddFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     SubFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     MulFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     DivFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     RemFloat {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     AddDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     SubDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     MulDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     DivDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
     RemDouble {
-        dest: SmaliRegister,
-        src1: SmaliRegister,
-        src2: SmaliRegister,
+        dest: Register,
+        src1: Register,
+        src2: Register,
     },
 
     // Group D: Arithmetic operations (2addr variants).
     AddInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     SubInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     MulInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     DivInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     RemInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     AndInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     OrInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     XorInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     ShlInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     ShrInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     UshrInt2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     AddLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     SubLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     MulLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     DivLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     RemLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     AndLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     OrLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     XorLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     ShlLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     ShrLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     UshrLong2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     AddFloat2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     SubFloat2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     MulFloat2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     DivFloat2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     RemFloat2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     AddDouble2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     SubDouble2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     MulDouble2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     DivDouble2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
     RemDouble2Addr {
-        reg: SmaliRegister,
-        src: SmaliRegister,
+        reg: Register,
+        src: Register,
     },
 
     // Additional conversion operations:
     IntToByte {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     IntToChar {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     IntToShort {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
 
     // Literal arithmetic operations using lit8 encoding:
     AddIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     RSubIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     MulIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     DivIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     RemIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     AndIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     OrIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     XorIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     ShlIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     ShrIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
     UshrIntLit8 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i8,
     },
 
     // Conditional branch operations now using SmaliRegister:
     IfEq {
-        reg1: SmaliRegister,
-        reg2: SmaliRegister,
-        offset: Label,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
     },
     IfNe {
-        reg1: SmaliRegister,
-        reg2: SmaliRegister,
-        offset: Label,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
     },
     IfLt {
-        reg1: SmaliRegister,
-        reg2: SmaliRegister,
-        offset: Label,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
     },
     IfGe {
-        reg1: SmaliRegister,
-        reg2: SmaliRegister,
-        offset: Label,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
     },
     IfGt {
-        reg1: SmaliRegister,
-        reg2: SmaliRegister,
-        offset: Label,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
     },
     IfLe {
-        reg1: SmaliRegister,
-        reg2: SmaliRegister,
-        offset: Label,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
     },
     IfEqz {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     IfNez {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     IfLtz {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     IfGez {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     IfGtz {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
     IfLez {
-        reg: SmaliRegister,
-        offset: Label,
+        reg: Register,
+        offset: Label<'a>,
     },
 
     // Arithmetic operations:
     NegInt {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     NotInt {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     NegLong {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     NotLong {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     NegFloat {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     NegDouble {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
 
     // Conversion operations added to the DexOp enum:
     IntToLong {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     IntToFloat {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     IntToDouble {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     LongToInt {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     LongToFloat {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     LongToDouble {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     FloatToInt {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     FloatToLong {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     FloatToDouble {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     DoubleToInt {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     DoubleToLong {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
     DoubleToFloat {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
     },
 
     AddIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     RSubIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     MulIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     DivIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     RemIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     AndIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     OrIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
     XorIntLit16 {
-        dest: SmaliRegister,
-        src: SmaliRegister,
+        dest: Register,
+        src: Register,
         literal: i16,
     },
 
     // Group E: Polymorphic, custom and method handle/type constants.
     InvokePolymorphic {
-        registers: Vec<SmaliRegister>,
-        method: MethodRef,
-        proto: String,
+        registers: Vec<Register>,
+        method: MethodRef<'a>,
+        proto: Cow<'a, str>,
     },
     InvokePolymorphicRange {
         range: RegisterRange,
-        method: MethodRef,
-        proto: String,
+        method: MethodRef<'a>,
+        proto: Cow<'a, str>,
     },
     InvokeCustom {
-        registers: Vec<SmaliRegister>,
-        call_site: String,
+        registers: Vec<Register>,
+        call_site: Cow<'a, str>,
     },
     InvokeCustomRange {
         range: RegisterRange,
-        call_site: String,
+        call_site: Cow<'a, str>,
     },
     ConstMethodHandle {
-        dest: SmaliRegister,
-        method_handle: String,
+        dest: Register,
+        method_handle: StringOrTypeSig<'a>,
     },
     ConstMethodType {
-        dest: SmaliRegister,
-        proto: String,
+        dest: Register,
+        proto: StringOrTypeSig<'a>,
     },
     Unused {
         opcode: u8,
     },
 }
 
-impl fmt::Display for DexOp {
+impl fmt::Display for DexOp<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // Group A
@@ -1703,582 +1648,572 @@ impl fmt::Display for DexOp {
 }
 
 /// Parse a register reference like "v0" or "p1", returning its number.
-fn parse_register(input: &str) -> IResult<&str, SmaliRegister> {
-    // We accept either 'v' or 'p' followed by one or more digits.
-    let (input, t) = alt((char('v'), char('p'))).parse(input)?;
-    let (input, num_str) = digit1(input)?;
-    let num = num_str.parse::<u16>().unwrap();
-    Ok((
-        input,
-        match t {
-            'v' => v(num),
-            _ => p(num),
+pub fn parse_register<'a>() -> impl Parser<&'a str, Output = Register, Error = Error<&'a str>> {
+    map_res(
+        (alt((char::<&str, Error<&str>>('v'), char('p'))), digit1),
+        |(t, o)| {
+            let num = o
+                .parse::<u16>()
+                .map_err(|_| Error::new(o, ErrorKind::Char))?;
+            Ok::<Register, Error<&str>>(match t {
+                'v' => Register::Local(num),
+                'p' => Register::Parameter(num),
+                _ => unreachable!(),
+            })
         },
-    ))
+    )
 }
 
 /// Parse a comma-separated list of registers inside curly braces.
-fn parse_register_list(input: &str) -> IResult<&str, Vec<SmaliRegister>> {
+fn parse_register_list<'a>() -> impl Parser<&'a str, Output = Vec<Register>, Error = Error<&'a str>>
+{
     delimited(
         char('{'),
-        separated_list0(delimited(space0, char(','), space0), parse_register),
+        separated_list0((space0, char(','), space0), parse_register()),
         char('}'),
     )
-    .parse(input)
 }
 
-/// Parses a string literal that may be empty.
-/// For example, it can parse `""` as well as `"builder"`.
-fn parse_string_literal(input: &str) -> IResult<&str, String> {
-    let esc = escaped(none_of("\\\""), '\\', one_of("'\"tbnrfu\\"));
-    let esc_or_empty = alt((esc, tag("")));
-
-    let (i, s) = delimited(
-        pair(multispace0, char('"')),
-        esc_or_empty,
-        pair(char('"'), multispace0),
+fn parse_const_high16<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_int_lit::<i32>(),
+            ),
+            |(dest, _, value32)| {
+                let value = (value32 >> 16) as i16;
+                DexOp::ConstHigh16 { dest, value }
+            },
+        ),
     )
-    .parse(input)?;
-
-    IResult::Ok((i, s.to_string()))
-
-    /*delimited(
-        char('"'),
-        // Use take_while instead of take_while1 so that the inner content may be empty.
-        map(take_while(|c| c != '"'), |s: &str| s.to_string()),
-        char('"')
-    ).parse(input)*/
 }
 
-pub(crate) fn parse_literal_int<T>(input: &str) -> IResult<&str, T>
-where
-    T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64>,
-    <T as TryFrom<i64>>::Error: Debug,
+fn parse_const_wide_high16<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 {
-    // Consume an optional sign.
-    let (input, sign) = opt(char('-')).parse(input)?;
-
-    if input.starts_with("0x") || input.starts_with("0X") {
-        let (input, _) = alt((tag("0x"), tag("0X"))).parse(input)?;
-        let (input, hex_digits) = take_while1(|c: char| c.is_ascii_hexdigit()).parse(input)?;
-        let (input, _) = opt(char('L')).parse(input)?;
-        if sign.is_some() {
-            // Parse the digits as a u64, then handle the negative value.
-            let value_u64 = u64::from_str_radix(hex_digits, 16).map_err(|_| {
-                nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit))
-            })?;
-            let value_i64 = if value_u64 == 0x8000000000000000 {
-                i64::MIN
-            } else if value_u64 <= i64::MAX as u64 {
-                -(value_u64 as i64)
-            } else {
-                return Err(nom::Err::Failure(nom::error::Error::new(
-                    input,
-                    nom::error::ErrorKind::Digit,
-                )));
-            };
-            let value = T::try_from(value_i64).expect("Conversion failed");
-            Ok((input, value))
-        } else {
-            let value_u64 = u64::from_str_radix(hex_digits, 16).map_err(|_| {
-                nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit))
-            })?;
-            if value_u64 > i64::MAX as u64 {
-                return Err(nom::Err::Failure(nom::error::Error::new(
-                    input,
-                    nom::error::ErrorKind::Digit,
-                )));
-            }
-            let value_i64 = value_u64 as i64;
-            let value = T::try_from(value_i64).expect("Conversion failed");
-            Ok((input, value))
-        }
-    } else {
-        let (input, num_str) = digit1(input)?;
-        let (input, _) = opt(char('L')).parse(input)?;
-        let mut value_i64 = num_str.parse::<i64>().map_err(|_| {
-            nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit))
-        })?;
-        if sign.is_some() {
-            value_i64 = -value_i64;
-        }
-        let value = T::try_from(value_i64).expect("Conversion failed");
-        Ok((input, value))
-    }
-}
-
-/*
-pub(crate) fn parse_literal_int<T>(input: &str) -> IResult<&str, T>
-    where
-        T: num_traits::Num
-        + std::ops::Neg<Output = T>
-        + std::str::FromStr
-        + TryFrom<i64>,
-        <T as TryFrom<i64>>::Error: std::fmt::Debug,
-{
-    // Consume an optional sign.
-    let (input, sign) = opt(char('-')).parse(input)?;
-
-    if input.starts_with("0x") || input.starts_with("0X") {
-        let (input, _) = alt((tag("0x"), tag("0X"))).parse(input)?;
-        let (input, hex_digits) = take_while1(|c: char| c.is_digit(16)).parse(input)?;
-        let (input, _) = opt(char('L')).parse(input)?;
-        let mut value_i64 = i64::from_str_radix(hex_digits, 16)
-            .map_err(|_| nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit)))?;
-        if sign.is_some() {
-            value_i64 = -value_i64;
-        }
-        let value = T::try_from(value_i64).expect("Conversion failed");
-        Ok((input, value))
-    } else {
-        let (input, num_str) = digit1(input)?;
-        let (input, _) = opt(char('L')).parse(input)?;
-        let mut value_i64 = num_str.parse::<i64>()
-            .map_err(|_| nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Digit)))?;
-        if sign.is_some() {
-            value_i64 = -value_i64;
-        }
-        let value = T::try_from(value_i64).expect("Conversion failed");
-        Ok((input, value))
-    }
-}
- */
-
-/// Parse a method reference of the form:
-///    L<class>;-><method>(<args>)<ret>
-/// For example:
-///    Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
-fn parse_method_ref(input: &str) -> IResult<&str, MethodRef> {
-    // Parse until the "->"
-    let (input, class) = take_until("->").parse(input)?;
-    let (input, _) = tag("->").parse(input)?;
-    // Parse the method name (up to the opening parenthesis)
-    let (input, name) = take_until("(").parse(input)?;
-    let (input, descriptor) = parse_methodsignature(input)?;
-
-    Ok((
-        input,
-        MethodRef {
-            class: class.trim().to_owned(),
-            name: name.trim().to_owned(),
-            descriptor: descriptor.to_jni(),
-        },
-    ))
-}
-
-fn parse_field_ref(input: &str) -> IResult<&str, FieldRef> {
-    // Parse until the "->"
-    let (input, class) = take_until("->").parse(input)?;
-    let (input, _) = tag("->").parse(input)?;
-    // Parse the method name (up to the opening parenthesis)
-    let (input, name) = take_until(":").parse(input)?;
-    let (input, _) = tag(":").parse(input)?;
-    let (input, descriptor) = parse_typesignature(input)?;
-
-    Ok((
-        input,
-        FieldRef {
-            class: class.trim().to_owned(),
-            name: name.trim().to_owned(),
-            descriptor: descriptor.to_jni(),
-        },
-    ))
-}
-
-fn parse_const_high16(input: &str) -> IResult<&str, DexOp> {
-    let (input, _) = space1(input)?;
-    let (input, dest) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, value32): (&str, i32) = parse_literal_int(input)?;
-    let value = (value32 >> 16) as i16;
-    Ok((input, DexOp::ConstHigh16 { dest, value }))
-}
-
-fn parse_const_wide_high16(input: &str) -> IResult<&str, DexOp> {
-    let (input, _) = space1(input)?;
-    let (input, dest) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, value64): (&str, i64) = parse_literal_int(input)?;
-    let value = (value64 >> 48) as i16;
-    Ok((input, DexOp::ConstWideHigh16 { dest, value }))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_int_lit::<i64>(),
+            ),
+            |(dest, _, value64)| {
+                let value = (value64 >> 48) as i16;
+                DexOp::ConstWideHigh16 { dest, value }
+            },
+        ),
+    )
 }
 
 /// Parses a register range enclosed in braces, e.g. "{v0 .. v6}".
 /// Returns a tuple (first_reg, last_reg)
-fn parse_register_range(input: &str) -> IResult<&str, RegisterRange> {
-    let (input, _) = delimited(space0, char('{'), space0).parse(input)?;
-    let (input, start) = parse_register(input)?;
-    let (input, _) = delimited(space0, tag(".."), space0).parse(input)?;
-    let (input, end) = parse_register(input)?;
-    let (input, _) = delimited(space0, char('}'), space0).parse(input)?;
-    Ok((input, RegisterRange { start, end }))
-}
-
-fn parse_invoke_polymorphic(input: &str) -> IResult<&str, DexOp> {
-    let (input, _) = space1(input)?;
-    let (input, registers) = parse_register_list(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, method) = parse_method_ref(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, proto) = alphanumeric1(input)?;
-    Ok((
-        input,
-        DexOp::InvokePolymorphic {
-            registers,
-            method,
-            proto: proto.to_owned(),
-        },
-    ))
-}
-
-fn parse_invoke_polymorphic_range(input: &str) -> IResult<&str, DexOp> {
-    let (input, _) = space1(input)?;
-    let (input, range) = parse_register_range(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, method) = parse_method_ref(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, proto) = alphanumeric1(input)?;
-    Ok((
-        input,
-        DexOp::InvokePolymorphicRange {
-            range,
-            method,
-            proto: proto.to_owned(),
-        },
-    ))
-}
-
-fn parse_invoke_custom(input: &str) -> IResult<&str, DexOp> {
-    let (input, _) = space1(input)?;
-    let (input, registers) = parse_register_list(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, call_site) = alphanumeric1(input)?;
-    Ok((
-        input,
-        DexOp::InvokeCustom {
-            registers,
-            call_site: call_site.to_owned(),
-        },
-    ))
-}
-
-fn parse_invoke_custom_range(input: &str) -> IResult<&str, DexOp> {
-    let (input, _) = space1(input)?;
-    let (input, range) = parse_register_range(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, call_site) = alphanumeric1(input)?;
-    Ok((
-        input,
-        DexOp::InvokeCustomRange {
-            range,
-            call_site: call_site.to_owned(),
-        },
-    ))
-}
-
-fn parse_invoke<F>(constructor: F, input: &str) -> IResult<&str, DexOp>
-where
-    F: Fn(Vec<SmaliRegister>, MethodRef) -> DexOp,
+fn parse_register_range<'a>() -> impl Parser<&'a str, Output = RegisterRange, Error = Error<&'a str>>
 {
-    let (input, _) = space1(input)?;
-    let (input, registers) = parse_register_list(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, method) = parse_method_ref(input)?;
-    Ok((input, constructor(registers, method)))
+    delimited(
+        delimited(space0, char('{'), space0),
+        map(
+            (
+                parse_register(),
+                delimited(space0, tag(".."), space0),
+                parse_register(),
+            ),
+            |(start, _, end)| RegisterRange { start, end },
+        ),
+        delimited(space0, char('}'), space0),
+    )
+}
+
+fn parse_invoke_polymorphic<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+{
+    preceded(
+        space1,
+        map(
+            (
+                parse_register_list(),
+                delimited(space0, char(','), space0),
+                parse_method_ref(),
+                delimited(space0, char(','), space0),
+                alphanumeric1,
+            ),
+            |(registers, _, method, _, proto)| DexOp::InvokePolymorphic {
+                registers,
+                method,
+                proto: Cow::Borrowed(proto),
+            },
+        ),
+    )
+}
+
+fn parse_invoke_polymorphic_range<'a>()
+-> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+    preceded(
+        space1,
+        map(
+            (
+                parse_register_range(),
+                delimited(space0, char(','), space0),
+                parse_method_ref(),
+                delimited(space0, char(','), space0),
+                alphanumeric1,
+            ),
+            |(range, _, method, _, proto)| DexOp::InvokePolymorphicRange {
+                range,
+                method,
+                proto: Cow::Borrowed(proto),
+            },
+        ),
+    )
+}
+
+fn parse_invoke_custom<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+    preceded(
+        space1,
+        map(
+            (
+                parse_register_list(),
+                delimited(space0, char(','), space0),
+                alphanumeric1,
+            ),
+            |(registers, _, call_site)| DexOp::InvokeCustom {
+                registers,
+                call_site: Cow::Borrowed(call_site),
+            },
+        ),
+    )
+}
+
+fn parse_invoke_custom_range<'a>()
+-> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+    preceded(
+        space1,
+        map(
+            (
+                parse_register_range(),
+                delimited(space0, char(','), space0),
+                alphanumeric1,
+            ),
+            |(range, _, call_site)| DexOp::InvokeCustomRange {
+                range,
+                call_site: Cow::Borrowed(call_site),
+            },
+        ),
+    )
+}
+
+fn parse_invoke<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+where
+    F: Fn(Vec<Register>, MethodRef<'a>) -> DexOp<'a>,
+{
+    preceded(
+        space1,
+        map(
+            (
+                parse_register_list(),
+                delimited(space0, char(','), space0),
+                parse_method_ref(),
+            ),
+            move |(registers, _, method)| constructor(registers, method),
+        ),
+    )
 }
 
 macro_rules! invoke_case {
-    ($variant:ident, $input: expr) => {
-        parse_invoke(
-            |regs, method| DexOp::$variant {
-                registers: regs,
-                method,
-            },
-            $input,
-        )
+    ($variant:ident, $input:ident) => {
+        parse_invoke(|regs, method| DexOp::$variant {
+            registers: regs,
+            method,
+        })
+        .parse_complete($input)?
     };
 }
 
-fn parse_one_reg_op<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_one_reg_op<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister) -> DexOp,
+    F: Fn(Register) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg) = parse_register(input)?;
-    Ok((input, constructor(reg)))
+    preceded(space1, map(parse_register(), constructor))
 }
-
 macro_rules! one_reg_case {
-    ($variant:ident, $field:ident, $input:expr) => {
-        parse_one_reg_op($input, |r| DexOp::$variant { $field: r })
+    ($variant:ident, $field:ident, $input:ident) => {
+        parse_one_reg_op(|r| DexOp::$variant { $field: r }).parse_complete($input)?
     };
 }
 
 /// Helper function: it consumes a space, then a register, then a comma (with optional spaces), then another register.
-fn parse_two_reg_op<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_two_reg_op<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, SmaliRegister) -> DexOp,
+    F: Fn(Register, Register) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, r1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, r2) = parse_register(input)?;
-    Ok((input, constructor(r1, r2)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+            ),
+            move |(r1, _, r2)| constructor(r1, r2),
+        ),
+    )
 }
 
 /// Macro for two-register operations. You specify the variant name and the names of the fields.
 macro_rules! two_reg_case {
-    ($variant:ident, $field1:ident, $field2:ident, $input:expr) => {
-        parse_two_reg_op($input, |r1, r2| DexOp::$variant {
+    ($variant:ident, $field1:ident, $field2:ident, $input:ident) => {
+        parse_two_reg_op(|r1, r2| DexOp::$variant {
             $field1: r1,
             $field2: r2,
         })
+        .parse_complete($input)?
     };
 }
 
 /// Helper function: parses three registers from the input.
 /// It expects at least one space, then a register, a comma, another register,
 /// a comma, and a third register.
-fn parse_three_reg_op<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_three_reg_op<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, SmaliRegister, SmaliRegister) -> DexOp,
+    F: Fn(Register, Register, Register) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, r1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, r2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, r3) = parse_register(input)?;
-    Ok((input, constructor(r1, r2, r3)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+            ),
+            move |(r1, _, r2, _, r3)| constructor(r1, r2, r3),
+        ),
+    )
 }
 
 /// Macro for three-register operations.
 /// You supply the enum variant and the field names for each register,
 /// along with the input.
 macro_rules! three_reg_case {
-    ($variant:ident, $field1:ident, $field2:ident, $field3:ident, $input:expr) => {
-        parse_three_reg_op($input, |r1, r2, r3| DexOp::$variant {
+    ($variant:ident, $field1:ident, $field2:ident, $field3:ident, $input:ident) => {
+        parse_three_reg_op(|r1, r2, r3| DexOp::$variant {
             $field1: r1,
             $field2: r2,
             $field3: r3,
         })
+        .parse_complete($input)?
     };
 }
 
 /// Helper for one-reg + literal operations.
 /// It assumes the opcode has already been consumed.
-fn parse_one_reg_and_literal<T, F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_one_reg_and_literal<'a, T, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64>,
-    F: Fn(SmaliRegister, T) -> DexOp,
+    T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64> + 'a,
+    F: Fn(Register, T) -> DexOp<'a>,
     <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, literal) = parse_literal_int::<T>(input)?;
-    Ok((input, constructor(reg, literal)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_int_lit::<T>(),
+            ),
+            move |(reg, _, literal)| constructor(reg, literal),
+        ),
+    )
 }
 
 macro_rules! one_reg_lit_case {
-    ($variant:ident, $field:ident, $lit_ty:ty, $input:expr) => {
-        parse_one_reg_and_literal::<$lit_ty, _>($input, |r, lit| DexOp::$variant {
+    ($variant:ident, $field:ident, $lit_ty:ty, $input:ident) => {
+        parse_one_reg_and_literal::<$lit_ty, _>(|r, lit| DexOp::$variant {
             $field: r,
             value: lit,
         })
+        .parse_complete($input)?
     };
 }
 
 /// Helper for two-reg + literal operations.
-fn parse_two_reg_and_literal<T, F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_two_reg_and_literal<'a, T, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64>,
-    F: Fn(SmaliRegister, SmaliRegister, T) -> DexOp,
+    T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64> + 'a,
+    F: Fn(Register, Register, T) -> DexOp<'a>,
     <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
-    let (input, _) = space1(input)?;
-    let (input, r1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, r2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, literal) = parse_literal_int::<T>(input)?;
-    Ok((input, constructor(r1, r2, literal)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_int_lit::<T>(),
+            ),
+            move |(r1, _, r2, _, literal)| constructor(r1, r2, literal),
+        ),
+    )
 }
 
 macro_rules! two_reg_lit_case {
-    ($variant:ident, $field1:ident, $field2:ident, $lit_ty:ty, $input:expr) => {
-        parse_two_reg_and_literal::<$lit_ty, _>($input, |r1, r2, lit| DexOp::$variant {
+    ($variant:ident, $field1:ident, $field2:ident, $lit_ty:ty, $input:ident) => {
+        parse_two_reg_and_literal::<$lit_ty, _>(|r1, r2, lit| DexOp::$variant {
             $field1: r1,
             $field2: r2,
             literal: lit,
         })
+        .parse_complete($input)?
     };
 }
 
-fn parse_one_reg_and_fieldref<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_one_reg_and_fieldref<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, FieldRef) -> DexOp,
+    F: Fn(Register, FieldRef) -> DexOp + 'a,
 {
-    let (input, _) = space1(input)?;
-    let (input, dest) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, field) = parse_field_ref(input)?;
-    Ok((input, constructor(dest, field)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_field_ref(),
+            ),
+            move |(dest, _, field)| constructor(dest, field),
+        ),
+    )
 }
 
 macro_rules! one_reg_fieldref_case {
-    ($variant:ident, $reg:ident, $input:expr) => {
-        parse_one_reg_and_fieldref($input, |reg, field| DexOp::$variant { $reg: reg, field })
+    ($variant:ident, $reg:ident, $input:ident) => {
+        parse_one_reg_and_fieldref(|reg, field| DexOp::$variant { $reg: reg, field })
+            .parse_complete($input)?
     };
 }
 
-fn parse_two_reg_and_fieldref<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_two_reg_and_fieldref<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, SmaliRegister, FieldRef) -> DexOp,
+    F: Fn(Register, Register, FieldRef) -> DexOp + 'a,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, reg2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, field) = parse_field_ref(input)?;
-    Ok((input, constructor(reg1, reg2, field)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_field_ref(),
+            ),
+            move |(reg1, _, reg2, _, field)| constructor(reg1, reg2, field),
+        ),
+    )
 }
 
 macro_rules! two_reg_fieldref_case {
-    ($variant:ident, $reg1:ident, $input:expr) => {
-        parse_two_reg_and_fieldref($input, |reg1, object, field| DexOp::$variant {
+    ($variant:ident, $reg1:ident, $input:ident) => {
+        parse_two_reg_and_fieldref(|reg1, object, field| DexOp::$variant {
             $reg1: reg1,
             object,
             field,
         })
+        .parse_complete($input)?
     };
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringOrTypeSig<'a> {
+    String(Cow<'a, str>),
+    TypeSig(TypeSignature<'a>),
+}
+
+impl fmt::Display for StringOrTypeSig<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Prepend a colon when printing
+        match &self {
+            Self::String(s) => {
+                write!(f, "{s}")
+            }
+            Self::TypeSig(ts) => {
+                write!(f, "{ts}")
+            }
+        }
+    }
 }
 
 /// Helper for one-reg + literal operations.
 /// It assumes the opcode has already been consumed.
-fn parse_one_reg_and_string<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_one_reg_and_string<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, String) -> DexOp,
+    F: Fn(Register, StringOrTypeSig<'a>) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-
-    // A string literal will have quotes
-    let r: IResult<&str, &str> = tag("\"").parse(input);
-    let (input, literal) = match r {
-        IResult::Ok(_) => parse_string_literal(input)?,
-        IResult::Err(_) => {
-            let (i, ts) = parse_typesignature(input)?;
-            (i, ts.to_jni())
-        }
-    };
-    Ok((input, constructor(reg, literal)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                alt((
+                    parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
+                    parse_typesignature().map(StringOrTypeSig::TypeSig),
+                )),
+            ),
+            move |(reg, _, literal)| constructor(reg, literal),
+        ),
+    )
 }
 
 macro_rules! one_reg_string_case {
-    ($variant:ident, $field:ident, $string:ident, $input:expr) => {
-        parse_one_reg_and_string($input, |r, lit| DexOp::$variant {
+    ($variant:ident, $field:ident, $string:ident, $input:ident) => {
+        parse_one_reg_and_string(|r, lit| DexOp::$variant {
             $field: r,
             $string: lit,
         })
+        .parse_complete($input)?
     };
 }
 
-fn parse_two_reg_and_string<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_two_reg_and_string<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, SmaliRegister, String) -> DexOp,
+    F: Fn(Register, Register, StringOrTypeSig<'a>) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, reg2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-
-    // A string literal will have quotes
-    let r: IResult<&str, &str> = tag("\"").parse(input);
-    let (input, literal) = match r {
-        IResult::Ok(_) => parse_string_literal(input)?,
-        IResult::Err(_) => {
-            let (i, ts) = parse_typesignature(input)?;
-            (i, ts.to_jni())
-        }
-    };
-    Ok((input, constructor(reg1, reg2, literal)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+                delimited(space0, char(','), space0),
+                alt((
+                    parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
+                    parse_typesignature().map(StringOrTypeSig::TypeSig),
+                )),
+            ),
+            move |(reg1, _, reg2, _, literal)| constructor(reg1, reg2, literal),
+        ),
+    )
 }
 
 macro_rules! two_reg_string_case {
-    ($variant:ident, $reg:ident, $string:ident, $input:expr) => {
-        parse_two_reg_and_string($input, |dest, reg, lit| DexOp::$variant {
+    ($variant:ident, $reg:ident, $string:ident, $input:ident) => {
+        parse_two_reg_and_string(|dest, reg, lit| DexOp::$variant {
             dest,
             $reg: reg,
             $string: lit,
         })
+        .parse_complete($input)?
     };
 }
 
-fn parse_one_reg_and_label<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_one_reg_and_label<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, Label) -> DexOp,
+    F: Fn(Register, Label<'a>) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, label) = parse_label(input)?;
-    Ok((input, constructor(reg, label)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_label(),
+            ),
+            move |(reg, _, label)| constructor(reg, label),
+        ),
+    )
 }
 
 macro_rules! one_reg_label_case {
-    ($variant:ident, $input:expr) => {
-        parse_one_reg_and_label($input, |reg, offset| DexOp::$variant { reg, offset })
+    ($variant:ident, $input:ident) => {
+        parse_one_reg_and_label(|reg, offset| DexOp::$variant { reg, offset })
+            .parse_complete($input)?
     };
 }
 
-fn parse_two_reg_and_label<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_two_reg_and_label<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(SmaliRegister, SmaliRegister, Label) -> DexOp,
+    F: Fn(Register, Register, Label<'a>) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, reg1) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, reg2) = parse_register(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, label) = parse_label(input)?;
-    Ok((input, constructor(reg1, reg2, label)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_register(),
+                delimited(space0, char(','), space0),
+                parse_label(),
+            ),
+            move |(reg1, _, reg2, _, label)| constructor(reg1, reg2, label),
+        ),
+    )
 }
 
 macro_rules! two_reg_label_case {
-    ($variant:ident, $input:expr) => {
-        parse_two_reg_and_label($input, |reg1, reg2, offset| DexOp::$variant {
-            reg1,
-            reg2,
-            offset,
-        })
+    ($variant:ident, $input:ident) => {
+        parse_two_reg_and_label(|reg1, reg2, offset| DexOp::$variant { reg1, reg2, offset })
+            .parse_complete($input)?
     };
 }
 
-pub fn parse_range_and_method<F>(input: &str, constructor: F) -> IResult<&str, DexOp>
+fn parse_range_and_method<'a, F>(
+    constructor: F,
+) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
 where
-    F: Fn(RegisterRange, MethodRef) -> DexOp,
+    F: Fn(RegisterRange, MethodRef<'a>) -> DexOp<'a>,
 {
-    let (input, _) = space1(input)?;
-    let (input, range) = parse_register_range(input)?;
-    let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-    let (input, method) = parse_method_ref(input)?;
-    Ok((input, constructor(range, method)))
+    preceded(
+        space1,
+        map(
+            (
+                parse_register_range(),
+                delimited(space0, char(','), space0),
+                parse_method_ref(),
+            ),
+            move |(range, _, method)| constructor(range, method),
+        ),
+    )
 }
 
 macro_rules! range_method_case {
-    ($variant:ident, $input:expr) => {
-        parse_range_and_method($input, |range, method| DexOp::$variant { range, method })
+    ($variant:ident, $input:ident) => {
+        parse_range_and_method(|range, method| DexOp::$variant { range, method })
+            .parse_complete($input)?
     };
 }
 
 // Higher level parser for all operations
-pub fn parse_op(input: &str) -> IResult<&str, DexOp> {
-    let (input, op) =
-        take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '/').parse(input)?;
+pub fn parse_dex_op<'a>(input: &'a str) -> IResult<&'a str, DexOp<'a>, Error<&'a str>> {
+    let (input, op) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '/')(input)?;
     let r = match op {
         // Invoke operations
         "invoke-static" => invoke_case!(InvokeStatic, input),
@@ -2505,18 +2440,18 @@ pub fn parse_op(input: &str) -> IResult<&str, DexOp> {
         "new-array" => two_reg_string_case!(NewArray, size_reg, class, input),
 
         // Gotos = 1 label
-        "goto" => {
-            let (_, offset) = preceded(space1, parse_label).parse(input)?;
-            IResult::Ok((input, DexOp::Goto { offset }))
-        }
-        "goto/16" => {
-            let (_, offset) = preceded(space1, parse_label).parse(input)?;
-            IResult::Ok((input, DexOp::Goto16 { offset }))
-        }
-        "goto/32" => {
-            let (_, offset) = preceded(space1, parse_label).parse(input)?;
-            IResult::Ok((input, DexOp::Goto32 { offset }))
-        }
+        "goto" => map(preceded(space1, parse_label()), |offset| DexOp::Goto {
+            offset,
+        })
+        .parse_complete(input)?,
+        "goto/16" => map(preceded(space1, parse_label()), |offset| DexOp::Goto16 {
+            offset,
+        })
+        .parse_complete(input)?,
+        "goto/32" => map(preceded(space1, parse_label()), |offset| DexOp::Goto32 {
+            offset,
+        })
+        .parse_complete(input)?,
 
         // One reg & label
         "if-eqz" => one_reg_label_case!(IfEqz, input),
@@ -2530,26 +2465,36 @@ pub fn parse_op(input: &str) -> IResult<&str, DexOp> {
         "fill-array-data" => one_reg_label_case!(FillArrayData, input),
 
         // Arrays
-        "filled-new-array" => {
-            let (input, _) = space1(input)?;
-            let (input, registers) = parse_register_list(input)?;
-            let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-            let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
-            Ok((input, DexOp::FilledNewArray { registers, class }))
-        }
-        "filled-new-array/range" => {
-            let (input, _) = space1(input)?;
-            let (input, range) = parse_register_range(input)?;
-            let (input, _) = delimited(space0, char(','), space0).parse(input)?;
-            let (input, class) = parse_typesignature(input).map(|(i, ts)| (i, ts.to_jni()))?;
-            Ok((
-                input,
-                DexOp::FilledNewArrayRange {
-                    registers: range,
-                    class,
+        "filled-new-array" => preceded(
+            space1,
+            map(
+                (
+                    parse_register_list(),
+                    delimited(space0, char(','), space0),
+                    parse_typesignature(),
+                ),
+                |(registers, _, class)| DexOp::FilledNewArray {
+                    registers,
+                    class: StringOrTypeSig::TypeSig(class),
                 },
-            ))
-        }
+            ),
+        )
+        .parse_complete(input)?,
+        "filled-new-array/range" => preceded(
+            space1,
+            map(
+                (
+                    parse_register_range(),
+                    delimited(space0, char(','), space0),
+                    parse_typesignature(),
+                ),
+                |(registers, _, class)| DexOp::FilledNewArrayRange {
+                    registers,
+                    class: StringOrTypeSig::TypeSig(class),
+                },
+            ),
+        )
+        .parse_complete(input)?,
 
         // Two regs & label
         "if-eq" => two_reg_label_case!(IfEq, input),
@@ -2567,41 +2512,42 @@ pub fn parse_op(input: &str) -> IResult<&str, DexOp> {
         "invoke-interface/range" => range_method_case!(InvokeInterfaceRange, input),
 
         // Oddities
-        "invoke-polymorphic" => parse_invoke_polymorphic(input),
-        "invoke-polymorphic/range" => parse_invoke_polymorphic_range(input),
-        "invoke-custom" => parse_invoke_custom(input),
-        "invoke-custom/range" => parse_invoke_custom_range(input),
-        "const/high16" => parse_const_high16(input),
-        "const-wide/high16" => parse_const_wide_high16(input),
-        "nop" => IResult::Ok((input, DexOp::Nop)),
-        "return-void" => IResult::Ok((input, DexOp::ReturnVoid)),
+        "invoke-polymorphic" => parse_invoke_polymorphic().parse_complete(input)?,
+        "invoke-polymorphic/range" => parse_invoke_polymorphic_range().parse_complete(input)?,
+        "invoke-custom" => parse_invoke_custom().parse_complete(input)?,
+        "invoke-custom/range" => parse_invoke_custom_range().parse_complete(input)?,
+        "const/high16" => parse_const_high16().parse_complete(input)?,
+        "const-wide/high16" => parse_const_wide_high16().parse_complete(input)?,
+        "nop" => (input, DexOp::Nop),
+        "return-void" => (input, DexOp::ReturnVoid),
 
         _ => {
-            panic!("Unhandled operation {op} {input}")
+            panic!("Unhandled operation {op}")
         }
     };
-    match r {
-        Ok(_) => r,
-        Err(e) => {
-            panic!("Error parsing operation {op} {input}: {e}")
-        }
-    }
+
+    Ok(r)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        object_identifier::parse_object_identifier,
+        signature::method_signature::parse_method_parameter,
+    };
+
     use super::*;
 
     #[test]
     fn test_const_string() {
         let input = r#"const-string v0, "builder""#;
-        let (rest, instr) = parse_op(input).unwrap();
+        let (rest, instr) = parse_dex_op(input).unwrap();
         assert!(rest.trim().is_empty());
         assert_eq!(
             instr,
             DexOp::ConstString {
-                dest: v(0),
-                value: "builder".to_owned()
+                dest: Register::Local(0),
+                value: StringOrTypeSig::String(Cow::Borrowed("builder"))
             }
         );
     }
@@ -2609,7 +2555,7 @@ mod tests {
     #[test]
     fn test_parse_method_ref() {
         let input = r#"Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
-        let (rest, mr) = parse_method_ref(input).unwrap();
+        let (rest, mr) = parse_method_ref().parse_complete(input).unwrap();
         assert!(rest.trim().is_empty());
         assert_eq!(mr.to_string(), input);
     }
@@ -2617,17 +2563,21 @@ mod tests {
     #[test]
     fn test_invoke_static() {
         let input = r#"invoke-static {p1, p2, v0, v1}, Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
-        let (rest, instr) = parse_op(input).unwrap();
+        let (rest, instr) = parse_dex_op(input).unwrap();
         assert!(rest.trim().is_empty());
         let expected_method = MethodRef {
-            class: "Landroidx/core/content/res/TypedArrayUtils;".to_owned(),
-            name: "getNamedString".to_owned(),
-            descriptor: "(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;".to_owned(),
+            class: parse_object_identifier().parse_complete("Landroidx/core/content/res/TypedArrayUtils;").unwrap().1,
+            param: parse_method_parameter().parse_complete("getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;").unwrap().1,
         };
         assert_eq!(
             instr,
             DexOp::InvokeStatic {
-                registers: vec![p(1), p(2), v(0), v(1)],
+                registers: vec![
+                    Register::Parameter(1),
+                    Register::Parameter(2),
+                    Register::Local(0),
+                    Register::Local(1)
+                ],
                 method: expected_method,
             }
         );
@@ -2636,17 +2586,22 @@ mod tests {
     #[test]
     fn test_invoke_direct() {
         let input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
-        let (rest, instr) = parse_op(input).unwrap();
+        let (rest, instr) = parse_dex_op(input).unwrap();
         assert!(rest.trim().is_empty());
         let expected_method = MethodRef {
-            class: "Ljava/lang/Object;".to_owned(),
-            name: "<init>".to_owned(),
-            descriptor: "()V".to_owned(),
+            class: parse_object_identifier()
+                .parse_complete("Ljava/lang/Object;")
+                .unwrap()
+                .1,
+            param: parse_method_parameter()
+                .parse_complete("<init>()V")
+                .unwrap()
+                .1,
         };
         assert_eq!(
             instr,
             DexOp::InvokeDirect {
-                registers: vec![p(0)],
+                registers: vec![Register::Parameter(0)],
                 method: expected_method,
             }
         );
@@ -2654,22 +2609,22 @@ mod tests {
 
     #[test]
     fn test_parse_literal_int() {
-        let (_, i): (_, i8) = parse_literal_int("-0x5").unwrap();
+        let (_, i): (_, i8) = parse_int_lit().parse_complete("-0x5").unwrap();
         assert_eq!(i, -5);
 
-        let (_, i): (_, i8) = parse_literal_int("50").unwrap();
+        let (_, i): (_, i8) = parse_int_lit().parse_complete("50").unwrap();
         assert_eq!(i, 50);
 
-        let (_, i): (_, i16) = parse_literal_int("-0x7c05").unwrap();
+        let (_, i): (_, i16) = parse_int_lit().parse_complete("-0x7c05").unwrap();
         assert_eq!(i, -0x7c05);
 
-        let (_, i): (_, i32) = parse_literal_int("0x7fffffff").unwrap();
+        let (_, i): (_, i32) = parse_int_lit().parse_complete("0x7fffffff").unwrap();
         assert_eq!(i, 0x7fffffff);
 
-        let (_, i): (_, i32) = parse_literal_int("-0x80000000").unwrap();
+        let (_, i): (_, i32) = parse_int_lit().parse_complete("-0x80000000").unwrap();
         assert_eq!(i, -0x80000000);
 
-        let (_, i): (_, i32) = parse_literal_int("-0x80000000").unwrap();
+        let (_, i): (_, i32) = parse_int_lit().parse_complete("-0x80000000").unwrap();
         let sixteen: i16 = (i >> 16) as i16;
         assert_eq!(sixteen, -0x8000);
     }
@@ -2677,13 +2632,18 @@ mod tests {
     #[test]
     fn test_filled_new_array() {
         let input = "filled-new-array {v0, v1}, Ljava/lang/String;";
-        let (rest, instr) = parse_op(input).unwrap();
+        let (rest, instr) = parse_dex_op(input).unwrap();
         assert!(rest.is_empty());
         assert_eq!(
             instr,
             DexOp::FilledNewArray {
-                registers: vec![v(0), v(1)],
-                class: "Ljava/lang/String;".to_string()
+                registers: vec![Register::Local(0), Register::Local(1)],
+                class: StringOrTypeSig::TypeSig(
+                    parse_typesignature()
+                        .parse_complete("Ljava/lang/String;")
+                        .unwrap()
+                        .1
+                )
             }
         );
     }
@@ -2691,16 +2651,18 @@ mod tests {
     #[test]
     fn test_filled_new_array_range() {
         let input = "filled-new-array/range {v0 .. v2}, [I";
-        let (rest, instr) = parse_op(input).unwrap();
+        let (rest, instr) = parse_dex_op(input).unwrap();
         assert!(rest.is_empty());
         assert_eq!(
             instr,
             DexOp::FilledNewArrayRange {
                 registers: RegisterRange {
-                    start: v(0),
-                    end: v(2)
+                    start: Register::Local(0),
+                    end: Register::Local(2)
                 },
-                class: "[I".to_string()
+                class: StringOrTypeSig::TypeSig(
+                    parse_typesignature().parse_complete("[I").unwrap().1
+                )
             }
         );
     }

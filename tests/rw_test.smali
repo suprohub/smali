@@ -53,6 +53,21 @@
         }
     .end annotation
 
+    .annotation runtime Lorg/checkerframework/checker/nullness/qual/EnsuresNonNull$List;
+        value = {
+            .subannotation Lorg/checkerframework/checker/nullness/qual/EnsuresNonNull;
+                value = {
+                    "this.preferences"
+                }
+            .end subannotation,
+            .subannotation Lorg/checkerframework/checker/nullness/qual/EnsuresNonNull;
+                value = {
+                    "this.monitoringSample"
+                }
+            .end subannotation
+        }
+    .end annotation
+
     .prologue
     .line 10
     const-string v0, "Start"

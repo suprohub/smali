@@ -1,86 +1,97 @@
-//! # Smali
-//!
-//! A library for reading and writing Android smali files
-//!
-use crate::types::{SmaliClass, SmaliError};
-use std::path::Path;
+/* Struct to represent a java object type identifer e.g. java.lang.Object */
+/* They are stored in the smali native (also JNI) format e.g. Ljava/lang/Object; */
 
-pub mod smali_ops;
-mod smali_parse;
-mod smali_write;
-pub mod types;
+use std::fmt::{self, Debug};
 
-/// Recurses a base path, typically a 'smali' folder from apktool returning a Vector of all found smali classes
-///
-/// # Examples
-///
-/// ```no_run
-///  use smali::find_smali_files;
-///  use std::path::PathBuf;
-///  use std::str::FromStr;
-///
-///  let mut p = PathBuf::from_str("smali").unwrap();
-///  let mut classes = find_smali_files(&p).unwrap();
-///  println!("{:} smali classes loaded.", classes.len());
-/// ```
-pub fn find_smali_files(dir: &Path) -> Result<Vec<SmaliClass>, SmaliError> {
-    let mut results = vec![];
+use nom::{
+    Parser,
+    branch::alt,
+    bytes::complete::{escaped, is_not, tag, take_while1},
+    character::complete::{char, multispace0, none_of, one_of},
+    combinator::{map, map_res, opt},
+    error::Error,
+    sequence::{delimited, preceded},
+};
 
-    for p in dir.read_dir().unwrap().flatten() {
-        // Directory: recurse sub-directory
-        if let Ok(f) = p.file_type() {
-            if f.is_dir() {
-                let mut new_dir = dir.to_path_buf();
-                new_dir.push(p.file_name());
-                let dir_hs = find_smali_files(&new_dir)?;
-                results.extend(dir_hs);
-            } else {
-                // It's a smali file
-                if p.file_name().to_str().unwrap().ends_with(".smali") {
-                    let dex_file = SmaliClass::read_from_file(&p.path())?;
-                    results.push(dex_file);
-                }
-            }
-        }
-    }
+pub mod annotation;
+pub mod class;
+pub mod field;
+pub mod field_ref;
+pub mod method;
+pub mod method_ref;
+pub mod modifier;
+pub mod object_identifier;
+pub mod op;
+pub mod param;
+pub mod signature;
 
-    Ok(results)
+/* Custom error for our command helper */
+#[derive(Debug)]
+pub struct SmaliError {
+    pub details: String,
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::types::{MethodSignature, ObjectIdentifier, SmaliClass, TypeSignature};
-    use std::fs;
-
-    #[test]
-    fn object_identifier_to_jni() {
-        let o = ObjectIdentifier::from_java_type("com.basic.Test");
-        assert_eq!(o.as_java_type(), "com.basic.Test");
-        assert_eq!(o.as_jni_type(), "Lcom/basic/Test;");
-    }
-
-    #[test]
-    fn object_identifier_to_java() {
-        let o = ObjectIdentifier::from_jni_type("Lcom/basic/Test;");
-        assert_eq!(o.as_jni_type(), "Lcom/basic/Test;");
-        assert_eq!(o.as_java_type(), "com.basic.Test");
-    }
-
-    #[test]
-    fn signatures() {
-        let t = TypeSignature::Bool;
-        assert_eq!(t.to_jni(), "Z");
-        let m = MethodSignature::from_jni("([I)V");
-        assert_eq!(m.result, TypeSignature::Void);
-    }
-
-    #[test]
-    fn read_write() {
-        for path in fs::read_dir("tests").unwrap() {
-            let path = path.unwrap();
-            let class = fs::read_to_string(path.path()).unwrap();
-            let parsed = SmaliClass::from_smali(&class).unwrap().to_smali();
-            println!("{:?}:\n{class}\nparsed:\n{parsed}", path.file_name())
+impl SmaliError {
+    pub fn new(msg: &str) -> SmaliError {
+        SmaliError {
+            details: msg.to_string(),
         }
     }
+}
+
+impl fmt::Display for SmaliError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+pub fn ws<'a, O, F>(inner: F) -> impl Parser<&'a str, Output = O, Error = Error<&'a str>>
+where
+    F: Parser<&'a str, Output = O, Error = Error<&'a str>>,
+{
+    delimited(multispace0, inner, multispace0)
+}
+
+pub fn comment<'a>() -> impl Parser<&'a str, Output = &'a str, Error = Error<&'a str>> {
+    preceded(char('#'), is_not("\n\r"))
+}
+
+/// Parses a string literal that may be empty.
+/// For example, it can parse `""` as well as `"builder"`.
+pub fn parse_string_lit<'a>() -> impl Parser<&'a str, Output = &'a str, Error = Error<&'a str>> {
+    delimited(
+        (multispace0, char('"')),
+        alt((
+            escaped(none_of("\\\""), '\\', one_of("'\"tbnrfu\\")),
+            tag(""),
+        )),
+        char('"'),
+    )
+}
+
+pub(crate) fn parse_int_lit<'a, T>() -> impl Parser<&'a str, Output = T, Error = Error<&'a str>>
+where
+    T: num_traits::Num + std::str::FromStr + TryFrom<i64>,
+    <T as TryFrom<i64>>::Error: Debug,
+{
+    map_res(
+        (
+            opt(char::<&str, Error<&str>>('-')),
+            alt((
+                map(
+                    preceded(
+                        alt((tag("0x"), tag("0X"))),
+                        take_while1(|c: char| c.is_ascii_hexdigit()),
+                    ),
+                    |s| (16, s),
+                ),
+                map(take_while1(|c: char| c.is_ascii_digit()), |s| (10, s)),
+            )),
+            opt(char('L')),
+        ),
+        |(sign, (base, digits), _)| match sign {
+            Some(_) => T::from_str_radix(&format!("-{digits}"), base),
+            None => T::from_str_radix(digits, base),
+        },
+    )
 }

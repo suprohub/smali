@@ -1,18 +1,19 @@
 [package]
-name = "smali"
-version = "0.3.0"
+name = "smali-rs"
+version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "A library to read and write Android disassembly smali files."
 readme = "README.MD"
-repository = "https://github.com/azw413/smali"
+repository = "https://github.com/suprohub/smali"
 keywords = ["android", "dex", "dalvik", "java", "smali"]
 exclude = [ ".gitignore", ".idea/*" ]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nom = "8"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 num-traits = "0.2"
+nom = "8"
+anyhow = "1.0"
