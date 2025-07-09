@@ -171,7 +171,7 @@ pub fn write_annotation(ann: &Annotation, subannotation: bool, indented: bool) -
 
     for i in &ann.elements {
         out.push_str(&format!("{}{}{} = ", indent, inset, i.name));
-        write_annotation_value(&mut out, i, indented, indent, inset);
+        write_annotation_value(&mut out, &i.value, indented, indent, inset);
     }
 
     out.push_str(indent);
@@ -181,8 +181,8 @@ pub fn write_annotation(ann: &Annotation, subannotation: bool, indented: bool) -
     out
 }
 
-pub fn write_annotation_value(out: &mut String, i: &AnnotationElement, indented: bool, indent: &str, inset: &str) {
-    match &i.value {
+pub fn write_annotation_value(out: &mut String, i: &AnnotationValue, indented: bool, indent: &str, inset: &str) {
+    match &i {
         AnnotationValue::Array(a) => {
             out.push_str("{\n");
             let mut c = 0;
@@ -190,7 +190,7 @@ pub fn write_annotation_value(out: &mut String, i: &AnnotationElement, indented:
                 out.push_str(indent);
                 out.push_str(inset);
                 out.push_str(inset);
-                write_annotation_value(out, i, indented, indent, inset);
+                write_annotation_value(out, v, indented, indent, inset);
                 c += 1;
                 if c < a.len() {
                     out.push(',');
