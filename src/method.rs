@@ -116,18 +116,166 @@ mod tests {
     fn test_method() {
         use super::*;
         use winnow::Parser;
-        let mut smali = r#".method public static values()[La0h;
-    .locals 1
+        let mut smali = r#".method public r(Ljava/lang/Throwable;Z)V
+    .locals 5
 
-    sget-object v0, La0h;->v:[La0h;
+    iget-object v0, p0, Laqg;->c:Ljava/lang/Object;
 
-    invoke-virtual {v0}, [La0h;->clone()Ljava/lang/Object;
+    check-cast v0, Landroid/widget/Toast;
 
-    move-result-object v0
+    if-eqz v0, :cond_0
 
-    check-cast v0, [La0h;
+    invoke-virtual {v0}, Landroid/widget/Toast;->cancel()V
 
-    return-object v0
+    :cond_0
+    iget-object v0, p0, Laqg;->b:Ljava/lang/Object;
+
+    check-cast v0, Lru/ok/messages/views/fragments/base/FrgBase;
+
+    invoke-virtual {v0}, Landroidx/fragment/app/a;->O1()Landroid/content/Context;
+
+    move-result-object v1
+
+    if-nez v1, :cond_1
+
+    return-void
+
+    :cond_1
+    instance-of v2, p1, Lru/ok/tamtam/stickersets/favorite/FavoriteStickerSetController$MaxFavoriteStickerSetsException;
+
+    const/4 v3, 0x0
+
+    if-eqz v2, :cond_2
+
+    const/4 v2, 0x1
+
+    goto :goto_0
+
+    :cond_2
+    instance-of v2, p1, Lru/ok/tamtam/errors/TamErrorException;
+
+    if-nez v2, :cond_3
+
+    move v2, v3
+
+    goto :goto_0
+
+    :cond_3
+    move-object v2, p1
+
+    check-cast v2, Lru/ok/tamtam/errors/TamErrorException;
+
+    iget-object v2, v2, Lru/ok/tamtam/errors/TamErrorException;->a:Lqaf;
+
+    iget-object v2, v2, Lqaf;->b:Ljava/lang/String;
+
+    const-string v4, "favorite.stickersets.limit"
+
+    invoke-virtual {v4, v2}, Ljava/lang/Object;->equals(Ljava/lang/Object;)Z
+
+    move-result v2
+
+    :goto_0
+    if-eqz v2, :cond_4
+
+    sget p1, Lpad;->g:I
+
+    iget-object p0, p0, Laqg;->a:Ljava/lang/Object;
+
+    check-cast p0, Lbud;
+
+    check-cast p0, Lakd;
+
+    invoke-virtual {p0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+
+    sget-object p2, Lru/ok/tamtam/android/prefs/PmsKey;->max-favorite-sticker-sets:Lru/ok/tamtam/android/prefs/PmsKey;
+
+    const/16 v2, 0x64
+
+    int-to-long v2, v2
+
+    invoke-virtual {p0, p2, v2, v3}, Lakd;->r(Ljava/lang/Enum;J)J
+
+    move-result-wide v2
+
+    long-to-int p0, v2
+
+    invoke-static {p1, p0, v1}, Lghf;->s(IILandroid/content/Context;)Ljava/lang/String;
+
+    move-result-object p0
+
+    new-instance p1, Lru/ok/messages/views/dialogs/FrgDlgFavoriteStickersLimit;
+
+    invoke-direct {p1}, Lru/ok/messages/views/dialogs/FrgDlgFavoriteStickersLimit;-><init>()V
+
+    new-instance p2, Landroid/os/Bundle;
+
+    invoke-direct {p2}, Landroid/os/Bundle;-><init>()V
+
+    const-string v1, "ru.ok.tamtam.extra.TEXT"
+
+    invoke-virtual {p2, v1, p0}, Landroid/os/BaseBundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
+
+    invoke-virtual {p1, p2}, Landroidx/fragment/app/a;->L2(Landroid/os/Bundle;)V
+
+    invoke-virtual {p1, v0}, Lru/ok/messages/views/dialogs/FrgDlgChecked;->d3(Landroidx/fragment/app/a;)V
+
+    goto :goto_3
+
+    :cond_4
+    instance-of v2, p1, Lru/ok/tamtam/errors/TamErrorException;
+
+    if-eqz v2, :cond_5
+
+    check-cast p1, Lru/ok/tamtam/errors/TamErrorException;
+
+    iget-object p1, p1, Lru/ok/tamtam/errors/TamErrorException;->a:Lqaf;
+
+    invoke-static {v1, p1}, Lfhf;->c(Landroid/content/Context;Lqaf;)Ljava/lang/String;
+
+    move-result-object p1
+
+    goto :goto_1
+
+    :cond_5
+    const/4 p1, 0x0
+
+    :goto_1
+    invoke-static {p1}, Lcvg;->A(Ljava/lang/CharSequence;)Z
+
+    move-result v2
+
+    if-eqz v2, :cond_7
+
+    if-eqz p2, :cond_6
+
+    sget p1, Lqad;->J9:I
+
+    invoke-virtual {v0, p1}, Landroidx/fragment/app/a;->S1(I)Ljava/lang/String;
+
+    move-result-object p1
+
+    goto :goto_2
+
+    :cond_6
+    sget p1, Lqad;->L9:I
+
+    invoke-virtual {v0, p1}, Landroidx/fragment/app/a;->S1(I)Ljava/lang/String;
+
+    move-result-object p1
+
+    :cond_7
+    :goto_2
+    invoke-static {v1, p1, v3}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;
+
+    move-result-object p1
+
+    iput-object p1, p0, Laqg;->c:Ljava/lang/Object;
+
+    invoke-virtual {p1}, Landroid/widget/Toast;->show()V
+
+    :goto_3
+    return-void
 .end method"#;
 
         let _ = parse_method().parse_next(&mut smali).unwrap();

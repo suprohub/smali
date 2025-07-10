@@ -1702,14 +1702,10 @@ fn parse_const_wide_high16<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputEr
 /// Returns a tuple (first_reg, last_reg)
 fn parse_register_range<'a>() -> impl ModalParser<&'a str, RegisterRange, InputError<&'a str>> {
     delimited(
-        delimited(space0, one_of('{'), space0),
-        (
-            parse_register(),
-            delimited(space0, literal(".."), space0),
-            parse_register(),
-        )
+        ws(one_of('{')),
+        (parse_register(), ws(literal("..")), parse_register())
             .map(|(start, _, end)| RegisterRange { start, end }),
-        delimited(space0, one_of('}'), space0),
+        ws(one_of('}')),
     )
 }
 
@@ -2421,7 +2417,7 @@ pub fn parse_dex_op<'a>(mut input: &mut &'a str) -> ModalResult<DexOp<'a>, Input
             space1,
             (
                 parse_register_list(),
-                delimited(space0, one_of(','), space0),
+                ws(one_of(',')),
                 parse_typesignature(),
             )
                 .map(|(registers, _, class)| DexOp::FilledNewArray {
@@ -2434,7 +2430,7 @@ pub fn parse_dex_op<'a>(mut input: &mut &'a str) -> ModalResult<DexOp<'a>, Input
             space1,
             (
                 parse_register_range(),
-                delimited(space0, one_of(','), space0),
+                ws(one_of(',')),
                 parse_typesignature(),
             )
                 .map(|(registers, _, class)| DexOp::FilledNewArrayRange {

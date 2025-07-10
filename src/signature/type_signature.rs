@@ -3,7 +3,7 @@ use std::{borrow::Cow, fmt};
 use serde::{Deserialize, Serialize};
 use winnow::{
     ModalParser, Parser,
-    combinator::{alt, delimited, preceded, terminated},
+    combinator::{alt, delimited, preceded},
     error::InputError,
     token::{one_of, take_while},
 };
@@ -122,10 +122,7 @@ pub struct TypeParameter<'a> {
 pub fn parse_type_parameter<'a>()
 -> impl ModalParser<&'a str, TypeParameter<'a>, InputError<&'a str>> {
     (
-        terminated(
-            take_while(0.., |c: char| c.is_alphanumeric() || c == '_' || c == '$'),
-            one_of(':'),
-        ),
+        take_while(0.., |c: char| c.is_alphanumeric() || c == '_' || c == '$'),
         |input: &mut &'a str| {
             //println!("test2");
             parse_typesignature().parse_next(input)
