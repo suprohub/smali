@@ -110,6 +110,26 @@ pub fn write_method(method: &Method) -> String {
 }
 
 mod tests {
+    #[test]
+    fn test_method() {
+        use super::*;
+        use winnow::Parser;
+        let mut smali = r#".method public static values()[La0h;
+    .locals 1
+
+    sget-object v0, La0h;->v:[La0h;
+
+    invoke-virtual {v0}, [La0h;->clone()Ljava/lang/Object;
+
+    move-result-object v0
+
+    check-cast v0, [La0h;
+
+    return-object v0
+.end method"#;
+
+        let _ = parse_method().parse_next(&mut smali).unwrap();
+    }
 
     #[test]
     fn test_method_with_param_annotation() {

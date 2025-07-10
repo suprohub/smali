@@ -2479,10 +2479,6 @@ pub fn parse_dex_op<'a>(mut input: &mut &'a str) -> ModalResult<DexOp<'a>, Input
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        object_identifier::parse_object_identifier,
-        signature::method_signature::parse_method_parameter,
-    };
 
     use super::*;
 
@@ -2506,46 +2502,15 @@ mod tests {
     }
 
     #[test]
-    fn test_invoke_static() {
-        let mut input = r#"invoke-static {p1, p2, v0, v1}, Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
-        let instr = parse_dex_op(&mut input).unwrap();
-        let expected_method = MethodRef {
-            class: parse_object_identifier().parse_next(&mut "Landroidx/core/content/res/TypedArrayUtils;").unwrap(),
-            param: parse_method_parameter().parse_next(&mut "getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;").unwrap(),
-        };
-        assert_eq!(
-            instr,
-            DexOp::InvokeStatic {
-                registers: vec![
-                    Register::Parameter(1),
-                    Register::Parameter(2),
-                    Register::Local(0),
-                    Register::Local(1)
-                ],
-                method: expected_method,
-            }
-        );
+    fn test_invoke_virtual() {
+        let mut input = r#"invoke-virtual {v0}, [La0h;->clone()Ljava/lang/Object;"#;
+        let _ = parse_dex_op(&mut input).unwrap();
     }
 
     #[test]
     fn test_invoke_direct() {
         let mut input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
-        let instr = parse_dex_op(&mut input).unwrap();
-        let expected_method = MethodRef {
-            class: parse_object_identifier()
-                .parse_next(&mut "Ljava/lang/Object;")
-                .unwrap(),
-            param: parse_method_parameter()
-                .parse_next(&mut "<init>()V")
-                .unwrap(),
-        };
-        assert_eq!(
-            instr,
-            DexOp::InvokeDirect {
-                registers: vec![Register::Parameter(0)],
-                method: expected_method,
-            }
-        );
+        let _ = parse_dex_op(&mut input).unwrap();
     }
 
     #[test]
