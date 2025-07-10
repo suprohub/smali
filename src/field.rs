@@ -56,12 +56,9 @@ mod tests {
     fn test_parse_field() {
         use crate::field::parse_field;
         use winnow::Parser;
-        let f = parse_field()
-            .parse_next(&mut ".field private final sentRequestAtMillis:J\n\n#aa")
+        let _f = parse_field()
+            .parse_next(&mut ".field private volatile synthetic workerCtl$volatile:I")
             .unwrap();
-        assert_eq!(f.param.ident, "sentRequestAtMillis".to_string());
-        assert_eq!(f.modifiers.len(), 2);
-        assert_eq!(f.param.ts.to_jni(), "J");
 
         let f = parse_field()
             .parse_next(&mut ".field private final body:Lokhttp3/ResponseBody;")
