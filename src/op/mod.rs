@@ -343,7 +343,7 @@ mod tests {
     fn test1() {
         use super::*;
         use winnow::Parser;
-        let mut input = "\n    invoke-direct {p0}, Ljava/lang/Object;-><init>()V\n\n";
+        let mut input = "\n\tinvoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;\n\t#1";
         let a = parse_op().parse_next(&mut input).unwrap();
         println!("{a:?}");
 

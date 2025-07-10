@@ -122,7 +122,10 @@ pub struct TypeParameter<'a> {
 pub fn parse_type_parameter<'a>()
 -> impl ModalParser<&'a str, TypeParameter<'a>, InputError<&'a str>> {
     (
-        terminated(take_while(0.., |c: char| c != ':'), one_of(':')),
+        terminated(
+            take_while(0.., |c: char| c.is_alphanumeric() || c == '_' || c == '$'),
+            one_of(':'),
+        ),
         |input: &mut &'a str| {
             //println!("test2");
             parse_typesignature().parse_next(input)

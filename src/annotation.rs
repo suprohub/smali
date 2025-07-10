@@ -253,4 +253,17 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn annotation_test1() {
+        use super::*;
+
+        let input = ".annotation system Ldalvik/annotation/MemberClasses;
+    value = {
+        Lokhttp3/OkHttpClient$Builder;,
+        Lokhttp3/OkHttpClient$Companion;
+    }
+.end annotation";
+        println!("{:?}", parse_annotation().parse(input).unwrap());
+    }
 }

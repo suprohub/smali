@@ -2502,12 +2502,6 @@ mod tests {
     }
 
     #[test]
-    fn test_invoke_virtual() {
-        let mut input = r#"invoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;"#;
-        let _ = parse_dex_op(&mut input).unwrap();
-    }
-
-    #[test]
     fn test_invoke_direct() {
         let mut input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
         let _ = parse_dex_op(&mut input).unwrap();

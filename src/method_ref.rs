@@ -2,10 +2,10 @@ use std::fmt;
 
 use winnow::{ModalParser, Parser, combinator::terminated, error::InputError, token::literal};
 
-use crate::{signature::{
-    method_signature::{parse_method_parameter, MethodParameter},
-    type_signature::{parse_typesignature, TypeSignature},
-}, ws};
+use crate::signature::{
+    method_signature::{MethodParameter, parse_method_parameter},
+    type_signature::{TypeSignature, parse_typesignature},
+};
 
 /// A symbolic reference to a method.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,10 +33,10 @@ impl fmt::Display for MethodRef<'_> {
 /// For example:
 ///    Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
 pub fn parse_method_ref<'a>() -> impl ModalParser<&'a str, MethodRef<'a>, InputError<&'a str>> {
-    ws((
+    (
         terminated(parse_typesignature(), literal("->")),
         parse_method_parameter(),
-    ))
+    )
         .map(|(class, param)| MethodRef { class, param })
 }
 
