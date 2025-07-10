@@ -23,7 +23,7 @@ pub struct Method<'a> {
 
     pub param: MethodParameter<'a>,
     /// Number of local variables required by the operations
-    pub locals: u32,
+    pub locals: Option<u32>,
     /// Method params
     pub params: Vec<Param<'a>>,
     /// Any method level annotations
@@ -38,7 +38,7 @@ pub fn parse_method<'a>() -> impl ModalParser<&'a str, Method<'a>, InputError<&'
         (
             parse_modifiers(),
             parse_method_parameter(),
-            preceded(ws(literal(".locals")), ws(parse_int_lit::<u32>())),
+            opt(preceded(ws(literal(".locals")), ws(parse_int_lit::<u32>()))),
             repeat(0.., parse_param()),
             repeat(0.., parse_annotation()),
             opt(ws(literal(".prologue"))),
@@ -66,7 +66,9 @@ pub fn write_method(method: &Method) -> String {
         method.param.ms.to_jni()
     ));
     if !method.ops.is_empty() {
-        out.push_str(&format!("    .locals {:}\n", method.locals));
+        if let Some(locals) = method.locals {
+            out.push_str(&format!("    .locals {locals}\n"));
+        }
     }
 
     for param in &method.params {
@@ -165,7 +167,7 @@ mod tests {
         assert_eq!(method.param.ident, "isInitialized");
         assert_eq!(method.annotations.len(), 1); // Signature annotation
         assert_eq!(method.ops.len(), 4);
-        assert_eq!(method.locals, 1);
+        assert_eq!(method.locals, Some(1));
         assert_eq!(method.modifiers.len(), 3); // private, static, final
     }
 }
