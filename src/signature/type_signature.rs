@@ -2,7 +2,10 @@ use std::{borrow::Cow, fmt};
 
 use serde::{Deserialize, Serialize};
 use winnow::{
-    combinator::{alt, delimited, preceded, terminated}, error::InputError, token::{one_of, take_while}, ModalParser, Parser
+    ModalParser, Parser,
+    combinator::{alt, delimited, preceded, terminated},
+    error::InputError,
+    token::{one_of, take_while},
 };
 
 use crate::{
@@ -119,9 +122,14 @@ pub struct TypeParameter<'a> {
 pub fn parse_type_parameter<'a>()
 -> impl ModalParser<&'a str, TypeParameter<'a>, InputError<&'a str>> {
     (
-        terminated(take_while(0.., |c: char| c.is_alphanumeric() || ['_', '$', '-'].contains(&c)), one_of(':')),
+        terminated(
+            take_while(0.., |c: char| {
+                c.is_alphanumeric() || ['_', '$', '-'].contains(&c)
+            }),
+            one_of(':'),
+        ),
         |input: &mut &'a str| {
-            println!("test2");
+            //println!("test2");
             parse_typesignature().parse_next(input)
         },
     )
