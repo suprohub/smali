@@ -41,7 +41,7 @@ pub fn parse_field<'a>() -> impl ModalParser<&'a str, Field<'a>, InputError<&'a 
             )),
             repeat(0.., parse_annotation()),
         ),
-        opt(ws(literal(".end field"))),
+        ws(opt(literal(".end field"))),
     )
     .map(|(modifiers, param, i, annotations)| Field {
         modifiers,
