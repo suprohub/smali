@@ -2503,7 +2503,7 @@ mod tests {
 
     #[test]
     fn test_invoke_virtual() {
-        let mut input = r#"invoke-virtual {v0}, [La0h;->clone()Ljava/lang/Object;"#;
+        let mut input = r#"invoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;"#;
         let _ = parse_dex_op(&mut input).unwrap();
     }
 
