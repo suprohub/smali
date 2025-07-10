@@ -2,10 +2,7 @@ use std::{borrow::Cow, fmt};
 
 use serde::{Deserialize, Serialize};
 use winnow::{
-    ModalParser, Parser,
-    combinator::{alt, delimited, preceded},
-    error::InputError,
-    token::{one_of, take_while},
+    combinator::{alt, delimited, preceded, terminated}, error::InputError, token::{one_of, take_while}, ModalParser, Parser
 };
 
 use crate::{
@@ -122,9 +119,9 @@ pub struct TypeParameter<'a> {
 pub fn parse_type_parameter<'a>()
 -> impl ModalParser<&'a str, TypeParameter<'a>, InputError<&'a str>> {
     (
-        take_while(0.., |c: char| c.is_alphanumeric() || c == '_' || c == '$'),
+        terminated(take_while(0.., |c: char| c.is_alphanumeric() || ['_', '$', '-'].contains(&c)), one_of(':')),
         |input: &mut &'a str| {
-            //println!("test2");
+            println!("test2");
             parse_typesignature().parse_next(input)
         },
     )
@@ -156,7 +153,6 @@ pub(crate) fn parse_typesignature<'a>()
             parse_typesignature().parse_next(input)
         })
             .map(|(ts, ts_rest)| TypeSignature::TypeParameters(ts, Box::new(ts_rest))),
-        parse_type_parameter().map(|t| TypeSignature::TypeParameter(Box::new(t))),
         parse_object_identifier().map(TypeSignature::Object),
         delimited(one_of('T'), take_while(0.., |x| x != ';'), one_of(';'))
             .map(|name: &str| TypeSignature::TypeVariableSignature(Cow::Borrowed(name))),
@@ -164,6 +160,7 @@ pub(crate) fn parse_typesignature<'a>()
             parse_typesignature().parse_next(input)
         })
         .map(|arr| TypeSignature::Array(Box::new(arr))),
+        parse_type_parameter().map(|t| TypeSignature::TypeParameter(Box::new(t))),
     )))
 }
 

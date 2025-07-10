@@ -127,7 +127,6 @@ pub fn parse_annotation_value<'a>()
     alt((
         (|input: &mut &'a str| parse_annotation().parse_next(input))
             .map(AnnotationValue::SubAnnotation),
-        preceded(ws(literal(".enum")), parse_field_ref()).map(AnnotationValue::Enum),
         delimited(
             ws(one_of('{')),
             separated(
@@ -139,6 +138,7 @@ pub fn parse_annotation_value<'a>()
         )
         .map(AnnotationValue::Array),
         parse_string_lit().map(|s: &'a str| AnnotationValue::String(s.into())),
+        preceded(ws(literal(".enum")), parse_field_ref()).map(AnnotationValue::Enum),
         // TODO: This can be any type, needed fixes
         take_till(0.., |c| c == ',' || c == '}' || c == '\n')
             .map(|s: &'a str| AnnotationValue::Any(s.into())),
