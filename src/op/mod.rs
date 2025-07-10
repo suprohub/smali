@@ -126,7 +126,7 @@ impl fmt::Display for CatchDirective<'_> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ArrayDataElement {
     Byte(i8),
     Short(i16),
@@ -150,7 +150,7 @@ impl fmt::Display for ArrayDataElement {
 }
 
 /// Represents a .array-data directive.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ArrayDataDirective {
     /// The element width as specified in the header.
     pub width: u32,
@@ -217,7 +217,7 @@ impl fmt::Display for ArrayDataDirective {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PackedSwitchDirective<'a> {
     pub first_key: i32,
     pub targets: Vec<Label<'a>>,
@@ -249,7 +249,7 @@ impl fmt::Display for PackedSwitchDirective<'_> {
 }
 
 /// An entry in a sparse-switch directive: a key and its corresponding target label.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SparseSwitchEntry<'a> {
     pub key: i32,
     pub target: Label<'a>,
@@ -274,7 +274,7 @@ impl fmt::Display for SparseSwitchEntry<'_> {
 }
 
 /// The sparse-switch directive.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SparseSwitchDirective<'a> {
     pub entries: Vec<SparseSwitchEntry<'a>>,
 }
@@ -306,7 +306,7 @@ impl fmt::Display for SparseSwitchDirective<'_> {
 
 /// An enum representing operations within a method, these can be a label, a line number or a dex operation as a String.
 ///
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Op<'a> {
     Label(Label<'a>),
     Line(u32),

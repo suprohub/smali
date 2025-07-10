@@ -19,7 +19,7 @@ use crate::{
 
 /// Struct representing a Java field
 ///
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Field<'a> {
     /// Any modifiers
     pub modifiers: Vec<Modifier>,

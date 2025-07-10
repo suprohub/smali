@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Struct representing a method parameter
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Param<'a> {
     /// Register used for the parameter
     pub register: Register,

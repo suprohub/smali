@@ -18,7 +18,7 @@ use nom::{
 
 /// Struct representing a Java method
 ///
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Method<'a> {
     /// Method modifiers
     pub modifiers: Vec<Modifier>,

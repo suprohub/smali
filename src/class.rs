@@ -37,7 +37,7 @@ use crate::{
 ///  let c = SmaliClass::read_from_file(Path::new("smali/com/cool/Class.smali")).expect("Uh oh, does the file exist?");
 ///  println!("Java class: {}", c.name.as_java_type());
 /// ```
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Class<'a> {
     /// The name of this class
     pub name: ObjectIdentifier<'a>,
