@@ -29,17 +29,11 @@ use crate::signature::{parse_type_parameters, type_signature::TypeSignature};
 ///  assert_eq!(o.as_java_type(), "com.basic.Test");
 ///  assert_eq!(o.as_jni_type(), "Lcom/basic/Test;");
 /// ```
-#[derive(Debug, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct ObjectIdentifier<'a> {
     pub(crate) class_name: Cow<'a, str>,
     pub(crate) type_arguments: Option<Vec<TypeSignature<'a>>>,
     pub(crate) suffix: Option<Cow<'a, str>>,
-}
-
-impl PartialEq<Self> for ObjectIdentifier<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.class_name == other.class_name
-    }
 }
 
 impl Hash for ObjectIdentifier<'_> {

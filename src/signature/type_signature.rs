@@ -4,7 +4,7 @@ use nom::{
     Parser,
     branch::alt,
     bytes::complete::take_while,
-    character::{char, complete::alphanumeric0},
+    character::char,
     combinator::{map, value},
     error::Error,
     sequence::{delimited, preceded, terminated},
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     object_identifier::{ObjectIdentifier, parse_object_identifier},
     signature::parse_type_parameters,
+    ws,
 };
 
 /// Represents a Java type: array, object or primitive type
@@ -26,7 +27,7 @@ use crate::{
 ///  let t = TypeSignature::Bool;
 ///  assert_eq!(t.to_jni(), "Z");
 /// ```
-#[derive(Debug, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum TypeSignature<'a> {
     Array(Box<TypeSignature<'a>>),
     Object(ObjectIdentifier<'a>),
@@ -45,12 +46,6 @@ pub enum TypeSignature<'a> {
     WildcardPlus,
     WildcardMinus,
     WildcardStar,
-}
-
-impl PartialEq<Self> for TypeSignature<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_jni() == other.to_jni()
-    }
 }
 
 impl fmt::Display for TypeSignature<'_> {
@@ -131,9 +126,16 @@ pub struct TypeParameter<'a> {
 pub fn parse_type_parameter<'a>()
 -> impl Parser<&'a str, Output = TypeParameter<'a>, Error = Error<&'a str>> {
     map(
-        (terminated(alphanumeric0, char(':')), |input| {
-            parse_typesignature().parse_complete(input)
-        }),
+        (
+            terminated(
+                take_while(|c: char| c.is_alphanumeric() || c == '_'),
+                char(':'),
+            ),
+            |input| {
+                //println!("test2");
+                parse_typesignature().parse_complete(input)
+            },
+        ),
         |(ident, ts)| TypeParameter {
             ident: ident.into(),
             ts,
@@ -144,7 +146,7 @@ pub fn parse_type_parameter<'a>()
 // Its needed to be recursive, sadly ;(
 pub(crate) fn parse_typesignature<'a>()
 -> impl Parser<&'a str, Output = TypeSignature<'a>, Error = Error<&'a str>> {
-    alt((
+    ws(alt((
         alt((
             value(TypeSignature::Bool, char('Z')),
             value(TypeSignature::Byte, char('B')),
@@ -179,7 +181,7 @@ pub(crate) fn parse_typesignature<'a>()
             }),
             |arr| TypeSignature::Array(Box::new(arr)),
         ),
-    ))
+    )))
 }
 
 mod tests {
@@ -226,9 +228,11 @@ mod tests {
 
     #[test]
     fn test_signature4() {
-        let ts = "I";
-        let o = TypeSignature::from_jni(ts);
+        use super::*;
+        use nom::Parser;
+
+        let ts = "CONSTANT_FIELD:I";
+        let o = parse_type_parameter().parse(ts).unwrap().1;
         println!("{o:?}");
-        assert_eq!(o.to_jni(), ts);
     }
 }

@@ -3,7 +3,7 @@ use std::{borrow::Cow, str::FromStr};
 use nom::{
     Parser,
     branch::alt,
-    bytes::complete::tag,
+    bytes::complete::{tag, take_till},
     character::complete::{alphanumeric1, char},
     combinator::{map, opt, value},
     error::Error,
@@ -51,10 +51,12 @@ pub fn parse_visibility<'a>()
 ///
 #[derive(Debug, PartialEq, Clone)]
 pub enum AnnotationValue<'a> {
-    Single(Cow<'a, str>),
+    String(Cow<'a, str>),
     Array(Vec<AnnotationValue<'a>>),
     SubAnnotation(Annotation<'a>),
     Enum(FieldRef<'a>),
+
+    Any(Cow<'a, str>),
 }
 
 impl FromStr for AnnotationVisibility {
@@ -145,7 +147,14 @@ pub fn parse_annotation_value<'a>()
             ),
             AnnotationValue::Array,
         ),
-        map(parse_string_lit(), |s| AnnotationValue::Single(s.into())),
+        map(parse_string_lit(), |s: &'a str| {
+            AnnotationValue::String(s.into())
+        }),
+        // TODO: This can be any type, needed fixes
+        map(
+            take_till(|c| c == ',' || c == '}' || c == '\n'),
+            |s: &'a str| AnnotationValue::Any(s.into()),
+        ),
     ))
 }
 
@@ -181,7 +190,13 @@ pub fn write_annotation(ann: &Annotation, subannotation: bool, indented: bool) -
     out
 }
 
-pub fn write_annotation_value(out: &mut String, i: &AnnotationValue, indented: bool, indent: &str, inset: &str) {
+pub fn write_annotation_value(
+    out: &mut String,
+    i: &AnnotationValue,
+    indented: bool,
+    indent: &str,
+    inset: &str,
+) {
     match &i {
         AnnotationValue::Array(a) => {
             out.push_str("{\n");
@@ -210,7 +225,10 @@ pub fn write_annotation_value(out: &mut String, i: &AnnotationValue, indented: b
                 f.param.ts
             ));
         }
-        AnnotationValue::Single(s) => {
+        AnnotationValue::String(s) => {
+            out.push_str(&format!("\"{s}\"\n"));
+        }
+        AnnotationValue::Any(s) => {
             out.push_str(&format!("{s}\n"));
         }
     }
@@ -227,7 +245,7 @@ mod tests {
         assert_eq!(a.name, "key");
         match a.value {
             AnnotationValue::Array(a) => {
-                assert_eq!(a[0], AnnotationValue::Single(Cow::Borrowed("a,")));
+                assert_eq!(a[0], AnnotationValue::String(Cow::Borrowed("a,")));
             }
             _ => {
                 println!("{a:?}");

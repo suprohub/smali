@@ -6,7 +6,7 @@ use std::fmt::{self, Debug};
 use nom::{
     Parser,
     branch::alt,
-    bytes::complete::{escaped, is_not, tag, take_while1},
+    bytes::complete::{escaped, tag, take_while, take_while1},
     character::complete::{char, multispace0, none_of, one_of},
     combinator::{map, map_res, opt},
     error::Error,
@@ -49,11 +49,21 @@ pub fn ws<'a, O, F>(inner: F) -> impl Parser<&'a str, Output = O, Error = Error<
 where
     F: Parser<&'a str, Output = O, Error = Error<&'a str>>,
 {
-    delimited(multispace0, inner, multispace0)
+    delimited(
+        multispace0,
+        inner,
+        (
+            multispace0,
+            opt((comment(), |i: &'a str| {
+                //println!("test1 {:?}", i.chars().take(50).collect::<String>());
+                multispace0(i)
+            })),
+        ),
+    )
 }
 
 pub fn comment<'a>() -> impl Parser<&'a str, Output = &'a str, Error = Error<&'a str>> {
-    preceded(char('#'), is_not("\n\r"))
+    preceded(char('#'), take_while(|c| c != '\n'))
 }
 
 /// Parses a string literal that may be empty.

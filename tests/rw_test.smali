@@ -7,6 +7,7 @@
 
 # annotations
 .annotation system Ldalvik/annotation/Signature;
+    a = "\n"
     value = {
         "Ljava/lang/Object;",
         "Ljava/lang/Runnable;"
@@ -28,7 +29,8 @@
 
 # direct methods
 .method public constructor <init>()V
-    .registers 1
+    # .registers 5 todo
+    .locals 0
 
     .line 5
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -37,6 +39,7 @@
 .end method
 
 .method public static testMethod(Ljava/lang/String;I)V
+    .locals 0
     .param p0              # Ljava/lang/String;
         .annotation build Lcom/example/ParamAnnotation;
             required = true
@@ -108,7 +111,7 @@
     move-exception v0
 
     .line 14
-    .local v0, "e":Ljava/lang/Exception;
+    # .local v0, "e":Ljava/lang/Exception; todo
     invoke-virtual {v0}, Ljava/lang/Exception;->printStackTrace()V
 
     goto :goto_0

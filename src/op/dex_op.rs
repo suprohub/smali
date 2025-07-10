@@ -24,6 +24,7 @@ use crate::{
     op::{Label, parse_label},
     parse_int_lit, parse_string_lit,
     signature::type_signature::{TypeSignature, parse_typesignature},
+    ws,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1649,7 +1650,7 @@ impl fmt::Display for DexOp<'_> {
 
 /// Parse a register reference like "v0" or "p1", returning its number.
 pub fn parse_register<'a>() -> impl Parser<&'a str, Output = Register, Error = Error<&'a str>> {
-    map_res(
+    ws(map_res(
         (alt((char::<&str, Error<&str>>('v'), char('p'))), digit1),
         |(t, o)| {
             let num = o
@@ -1661,7 +1662,7 @@ pub fn parse_register<'a>() -> impl Parser<&'a str, Output = Register, Error = E
                 _ => unreachable!(),
             })
         },
-    )
+    ))
 }
 
 /// Parse a comma-separated list of registers inside curly braces.
@@ -2614,6 +2615,9 @@ mod tests {
 
         let (_, i): (_, i8) = parse_int_lit().parse_complete("50").unwrap();
         assert_eq!(i, 50);
+
+        let (_, i): (_, i8) = parse_int_lit().parse_complete("5\n").unwrap();
+        assert_eq!(i, 5);
 
         let (_, i): (_, i16) = parse_int_lit().parse_complete("-0x7c05").unwrap();
         assert_eq!(i, -0x7c05);

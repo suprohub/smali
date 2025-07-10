@@ -1,16 +1,16 @@
 use crate::{
-    annotation::{parse_annotation, write_annotation, Annotation},
-    modifier::{parse_modifiers, write_modifiers, Modifier},
-    op::{parse_op, Op},
-    param::{parse_param, Param},
+    annotation::{Annotation, parse_annotation, write_annotation},
+    modifier::{Modifier, parse_modifiers, write_modifiers},
+    op::{Op, parse_op},
+    param::{Param, parse_param, write_param},
     parse_int_lit,
-    signature::method_signature::{parse_method_parameter, MethodParameter},
+    signature::method_signature::{MethodParameter, parse_method_parameter},
     ws,
 };
 use nom::{
     Parser,
     bytes::complete::tag,
-    combinator::map,
+    combinator::{map, opt},
     error::Error,
     multi::many0,
     sequence::{delimited, preceded},
@@ -18,7 +18,7 @@ use nom::{
 
 /// Struct representing a Java method
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Method<'a> {
     /// Method modifiers
     pub modifiers: Vec<Modifier>,
@@ -41,14 +41,15 @@ pub fn parse_method<'a>() -> impl Parser<&'a str, Output = Method<'a>, Error = E
             (
                 parse_modifiers(),
                 parse_method_parameter(),
-                preceded(ws(tag(".locals")), parse_int_lit::<u32>()),
+                preceded(ws(tag(".locals")), ws(parse_int_lit::<u32>())),
                 many0(parse_param()),
                 many0(parse_annotation()),
+                opt(ws(tag(".prologue"))),
                 many0(parse_op()),
             ),
             ws(tag(".end method")),
         ),
-        |(modifiers, param, locals, params, annotations, ops)| Method {
+        |(modifiers, param, locals, params, annotations, _, ops)| Method {
             modifiers,
             param,
             locals,
@@ -59,31 +60,50 @@ pub fn parse_method<'a>() -> impl Parser<&'a str, Output = Method<'a>, Error = E
     )
 }
 
-pub fn write_method(method: &Method) -> String
-{
+pub fn write_method(method: &Method) -> String {
     let mut out = format!(".method {}", write_modifiers(&method.modifiers));
-    out.push_str(&format!("{}{}\n", method.param.ident, method.param.ms.to_jni()));
-    if !method.ops.is_empty()
-    {
+    out.push_str(&format!(
+        "{}{}\n",
+        method.param.ident,
+        method.param.ms.to_jni()
+    ));
+    if !method.ops.is_empty() {
         out.push_str(&format!("    .locals {:}\n", method.locals));
     }
 
-    for a in &method.annotations
-    {
+    for param in &method.params {
+        out.push_str("    ");
+        out.push_str(&write_param(param));
+        out.push('\n');
+    }
+
+    for a in &method.annotations {
         out.push_str(&write_annotation(a, false, true));
     }
 
-    for i in &method.ops
-    {
-        match i
-        {
-            Op::Line(l) => { out.push_str(&format!("    .line {l:}\n")); }
-            Op::Label(l) => { out.push_str(&format!("    {l}\n")); }
-            Op::Op(s) => { out.push_str(&format!("    {s}\n")); }
-            Op::Catch(c) => { out.push_str(&format!("    {c}\n")); }
-            Op::ArrayData(ad) => { out.push_str(&format!("    {ad}\n")); }
-            Op::PackedSwitch(ps) => { out.push_str(&format!("    {ps}\n")); }
-            Op::SparseSwitch(ss) => { out.push_str(&format!("    {ss}\n")); }
+    for i in &method.ops {
+        match i {
+            Op::Line(l) => {
+                out.push_str(&format!("    .line {l:}\n"));
+            }
+            Op::Label(l) => {
+                out.push_str(&format!("    {l}\n"));
+            }
+            Op::Op(s) => {
+                out.push_str(&format!("    {s}\n"));
+            }
+            Op::Catch(c) => {
+                out.push_str(&format!("    {c}\n"));
+            }
+            Op::ArrayData(ad) => {
+                out.push_str(&format!("    {ad}\n"));
+            }
+            Op::PackedSwitch(ps) => {
+                out.push_str(&format!("    {ps}\n"));
+            }
+            Op::SparseSwitch(ss) => {
+                out.push_str(&format!("    {ss}\n"));
+            }
         }
     }
 

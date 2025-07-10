@@ -109,11 +109,13 @@ pub(crate) fn parse_methodsignature<'a>()
 mod tests {
     use nom::Parser;
 
-    use crate::signature::method_signature::{MethodSignature, parse_methodsignature};
+    use crate::signature::method_signature::{MethodSignature, parse_method_parameter};
 
     #[test]
     fn test_methodsignature() {
-        let (_, t) = parse_methodsignature().parse_complete("([B)V").unwrap();
+        let (_, t) = parse_method_parameter()
+            .parse_complete("<init>()V")
+            .unwrap();
         println!("{t:?}");
     }
 

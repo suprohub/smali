@@ -17,7 +17,13 @@ use nom::{
 };
 
 use crate::{
-    annotation::{parse_annotation, write_annotation, Annotation}, field::{parse_field, Field}, method::{parse_method, write_method, Method}, modifier::{parse_modifiers, write_modifiers, Modifier}, object_identifier::{parse_object_identifier, ObjectIdentifier}, parse_string_lit, ws, SmaliError
+    SmaliError,
+    annotation::{Annotation, parse_annotation, write_annotation},
+    field::{Field, parse_field},
+    method::{Method, parse_method, write_method},
+    modifier::{Modifier, parse_modifiers, write_modifiers},
+    object_identifier::{ObjectIdentifier, parse_object_identifier},
+    parse_string_lit, ws,
 };
 
 /// Represents a smali class i.e. the whole .smali file
@@ -31,7 +37,7 @@ use crate::{
 ///  let c = SmaliClass::read_from_file(Path::new("smali/com/cool/Class.smali")).expect("Uh oh, does the file exist?");
 ///  println!("Java class: {}", c.name.as_java_type());
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Class<'a> {
     /// The name of this class
     pub name: ObjectIdentifier<'a>,
@@ -60,11 +66,14 @@ pub fn parse_class<'a>() -> impl Parser<&'a str, Output = Class<'a>, Error = Err
         (
             preceded(
                 ws(tag(".class")),
-                (parse_modifiers(), parse_object_identifier()),
+                (parse_modifiers(), ws(parse_object_identifier())),
             ),
-            preceded(ws(tag(".super")), parse_object_identifier()),
-            opt(preceded(ws(tag(".source")), parse_string_lit()).map(Cow::Borrowed)),
-            many0(preceded(ws(tag(".implements")), parse_object_identifier())),
+            preceded(ws(tag(".super")), ws(parse_object_identifier())),
+            opt(preceded(ws(tag(".source")), ws(parse_string_lit())).map(Cow::Borrowed)),
+            many0(preceded(
+                ws(tag(".implements")),
+                ws(parse_object_identifier()),
+            )),
             many0(parse_annotation()),
             many0(parse_field()),
             many0(parse_method()),
@@ -84,14 +93,6 @@ pub fn parse_class<'a>() -> impl Parser<&'a str, Output = Class<'a>, Error = Err
         },
     )
 }
-
-impl PartialEq<Self> for Class<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-impl Eq for Class<'_> {}
 
 impl Hash for Class<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -200,61 +201,60 @@ impl<'a> Class<'a> {
     }
 }
 
-pub(crate) fn write_class(dex: &Class) -> String
-{
-    let mut out = format!(".class {}{}\n", write_modifiers(&dex.modifiers), dex.name.as_jni_type());
+pub(crate) fn write_class(dex: &Class) -> String {
+    let mut out = format!(
+        ".class {}{}\n",
+        write_modifiers(&dex.modifiers),
+        dex.name.as_jni_type()
+    );
     out.push_str(&format!(".super {}\n", dex.super_class.as_jni_type()));
-    if let Some(s) = &dex.source
-    {
+    if let Some(s) = &dex.source {
         out.push_str(&format!(".source \"{s}\"\n"));
     }
 
-    if !dex.implements.is_empty()
-    {
+    if !dex.implements.is_empty() {
         out.push_str("\n# interfaces\n");
-        for i in &dex.implements
-        {
+        for i in &dex.implements {
             out.push_str(".implements ");
             out.push_str(&i.as_jni_type());
             out.push('\n');
         }
     }
 
-    if !dex.annotations.is_empty()
-    {
+    if !dex.annotations.is_empty() {
         out.push_str("\n# annotations\n");
-        for a in &dex.annotations
-        {
+        for a in &dex.annotations {
             out.push_str(&write_annotation(a, false, false));
             out.push('\n');
         }
     }
 
-    if !dex.fields.is_empty()
-    {
+    if !dex.fields.is_empty() {
         out.push_str("\n# fields\n");
-        for f in &dex.fields
-        {
-            out.push_str(&format!(".field {}{}:{}", write_modifiers(&f.modifiers), f.param.ident, f.param.ts.to_jni()));
-            if let Some(iv) = &f.initial_value
-            {
+        for f in &dex.fields {
+            out.push_str(&format!(
+                ".field {}{}:{}",
+                write_modifiers(&f.modifiers),
+                f.param.ident,
+                f.param.ts.to_jni()
+            ));
+            if let Some(iv) = &f.initial_value {
                 out.push_str(&format!(" = {iv}"));
             }
             out.push('\n');
-            if !f.annotations.is_empty()
-            {
-                for a in &f.annotations {  out.push_str(&write_annotation(a, false, true)); }
+            if !f.annotations.is_empty() {
+                for a in &f.annotations {
+                    out.push_str(&write_annotation(a, false, true));
+                }
                 out.push_str(".end field\n");
             }
             out.push('\n');
         }
     }
 
-    if !dex.methods.is_empty()
-    {
+    if !dex.methods.is_empty() {
         out.push_str("\n# methods\n");
-        for m in &dex.methods
-        {
+        for m in &dex.methods {
             out.push_str(&write_method(m));
         }
     }
@@ -285,10 +285,32 @@ mod tests {
             let dir = dir.unwrap();
             println!("{:?}", dir.file_name());
             let smali = fs::read_to_string(dir.path()).unwrap();
-            let (_, c) = parse_class().parse_complete(&smali).unwrap();
+
+            let (i1, c) = parse_class().parse_complete(&smali).unwrap();
+            if !i1.is_empty() {
+                println!("remain {i1:?}");
+            }
+            assert!(i1.is_empty());
+
+            assert!(!c.annotations.is_empty());
+            assert!(!c.fields.is_empty());
+            assert!(!c.methods.is_empty());
+
             let second_smali = c.to_smali();
-            let (_, c2) = parse_class().parse_complete(&second_smali).unwrap();
-            assert_eq!(c, c2)
+            //println!("b {c:?}");
+
+            let (i2, c2) = parse_class().parse_complete(&second_smali).unwrap();
+            if !i2.is_empty() {
+                println!("remain 1 {i1:?}");
+                println!("remain 2 {i2}");
+            }
+            assert!(i2.is_empty());
+
+            assert!(!c2.annotations.is_empty());
+            assert!(!c2.fields.is_empty());
+            assert!(!c2.methods.is_empty());
+
+            assert_eq!(c, c2);
         }
     }
 }
