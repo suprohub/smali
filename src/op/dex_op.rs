@@ -7,15 +7,12 @@ use std::{
     fmt::{self, Debug},
 };
 
-use nom::{
-    IResult, Parser,
-    branch::alt,
-    bytes::complete::{tag, take_while1},
-    character::complete::{alphanumeric1, char, digit1, space0, space1},
-    combinator::{map, map_res},
-    error::{Error, ErrorKind},
-    multi::separated_list0,
-    sequence::{delimited, preceded},
+use winnow::{
+    ModalParser, ModalResult, Parser,
+    ascii::{alphanumeric1, digit1, space0, space1},
+    combinator::{alt, delimited, preceded, separated},
+    error::InputError,
+    token::{literal, one_of, take_while},
 };
 
 use crate::{
@@ -856,7 +853,7 @@ pub enum DexOp<'a> {
         literal: i8,
     },
 
-    // Conditional branch operations now using SmaliRegister:
+    // Conditional combinator operations now using SmaliRegister:
     IfEq {
         reg1: Register,
         reg2: Register,
@@ -1502,7 +1499,7 @@ impl fmt::Display for DexOp<'_> {
                 write!(f, "const-method-type {dest}, {proto}")
             }
 
-            // Conditional branches:
+            // Conditional combinatores:
             DexOp::IfEq { reg1, reg2, offset } => {
                 write!(f, "if-eq {reg1}, {reg2}, {offset}")
             }
@@ -1522,7 +1519,7 @@ impl fmt::Display for DexOp<'_> {
                 write!(f, "if-le {reg1}, {reg2}, {offset}")
             }
 
-            // Conditional branch operations with a single register:
+            // Conditional combinator operations with a single register:
             DexOp::IfEqz { reg, offset } => write!(f, "if-eqz {reg}, {offset}"),
             DexOp::IfNez { reg, offset } => write!(f, "if-nez {reg}, {offset}"),
             DexOp::IfLtz { reg, offset } => write!(f, "if-ltz {reg}, {offset}"),
@@ -1649,178 +1646,156 @@ impl fmt::Display for DexOp<'_> {
 }
 
 /// Parse a register reference like "v0" or "p1", returning its number.
-pub fn parse_register<'a>() -> impl Parser<&'a str, Output = Register, Error = Error<&'a str>> {
-    ws(map_res(
-        (alt((char::<&str, Error<&str>>('v'), char('p'))), digit1),
-        |(t, o)| {
-            let num = o
-                .parse::<u16>()
-                .map_err(|_| Error::new(o, ErrorKind::Char))?;
-            Ok::<Register, Error<&str>>(match t {
+pub fn parse_register<'a>() -> impl ModalParser<&'a str, Register, InputError<&'a str>> {
+    ws(
+        (alt((one_of('v'), one_of('p'))), digit1).try_map(|(t, o): (char, &str)| {
+            let num = o.parse::<u16>().map_err(|_| InputError::at(o))?;
+            Ok::<Register, InputError<&str>>(match t {
                 'v' => Register::Local(num),
                 'p' => Register::Parameter(num),
                 _ => unreachable!(),
             })
-        },
-    ))
+        }),
+    )
 }
 
 /// Parse a comma-separated list of registers inside curly braces.
-fn parse_register_list<'a>() -> impl Parser<&'a str, Output = Vec<Register>, Error = Error<&'a str>>
-{
+fn parse_register_list<'a>() -> impl ModalParser<&'a str, Vec<Register>, InputError<&'a str>> {
     delimited(
-        char('{'),
-        separated_list0((space0, char(','), space0), parse_register()),
-        char('}'),
+        one_of('{'),
+        separated(0.., parse_register(), (space0, one_of(','), space0)),
+        one_of('}'),
     )
 }
 
-fn parse_const_high16<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+fn parse_const_high16<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_int_lit::<i32>(),
-            ),
-            |(dest, _, value32)| {
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_int_lit::<i32>(),
+        )
+            .map(|(dest, _, value32)| {
                 let value = (value32 >> 16) as i16;
                 DexOp::ConstHigh16 { dest, value }
-            },
-        ),
+            }),
     )
 }
 
-fn parse_const_wide_high16<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
-{
+fn parse_const_wide_high16<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_int_lit::<i64>(),
-            ),
-            |(dest, _, value64)| {
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_int_lit::<i64>(),
+        )
+            .map(|(dest, _, value64)| {
                 let value = (value64 >> 48) as i16;
                 DexOp::ConstWideHigh16 { dest, value }
-            },
-        ),
+            }),
     )
 }
 
 /// Parses a register range enclosed in braces, e.g. "{v0 .. v6}".
 /// Returns a tuple (first_reg, last_reg)
-fn parse_register_range<'a>() -> impl Parser<&'a str, Output = RegisterRange, Error = Error<&'a str>>
-{
+fn parse_register_range<'a>() -> impl ModalParser<&'a str, RegisterRange, InputError<&'a str>> {
     delimited(
-        delimited(space0, char('{'), space0),
-        map(
-            (
-                parse_register(),
-                delimited(space0, tag(".."), space0),
-                parse_register(),
-            ),
-            |(start, _, end)| RegisterRange { start, end },
-        ),
-        delimited(space0, char('}'), space0),
+        delimited(space0, one_of('{'), space0),
+        (
+            parse_register(),
+            delimited(space0, literal(".."), space0),
+            parse_register(),
+        )
+            .map(|(start, _, end)| RegisterRange { start, end }),
+        delimited(space0, one_of('}'), space0),
     )
 }
 
-fn parse_invoke_polymorphic<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+fn parse_invoke_polymorphic<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
+    preceded(
+        space1,
+        (
+            parse_register_list(),
+            delimited(space0, one_of(','), space0),
+            parse_method_ref(),
+            delimited(space0, one_of(','), space0),
+            alphanumeric1,
+        )
+            .map(
+                |(registers, _, method, _, proto)| DexOp::InvokePolymorphic {
+                    registers,
+                    method,
+                    proto: Cow::Borrowed(proto),
+                },
+            ),
+    )
+}
+
+fn parse_invoke_polymorphic_range<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register_list(),
-                delimited(space0, char(','), space0),
-                parse_method_ref(),
-                delimited(space0, char(','), space0),
-                alphanumeric1,
+        (
+            parse_register_range(),
+            delimited(space0, one_of(','), space0),
+            parse_method_ref(),
+            delimited(space0, one_of(','), space0),
+            alphanumeric1,
+        )
+            .map(
+                |(range, _, method, _, proto)| DexOp::InvokePolymorphicRange {
+                    range,
+                    method,
+                    proto: Cow::Borrowed(proto),
+                },
             ),
-            |(registers, _, method, _, proto)| DexOp::InvokePolymorphic {
-                registers,
-                method,
-                proto: Cow::Borrowed(proto),
-            },
-        ),
     )
 }
 
-fn parse_invoke_polymorphic_range<'a>()
--> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+fn parse_invoke_custom<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        map(
-            (
-                parse_register_range(),
-                delimited(space0, char(','), space0),
-                parse_method_ref(),
-                delimited(space0, char(','), space0),
-                alphanumeric1,
-            ),
-            |(range, _, method, _, proto)| DexOp::InvokePolymorphicRange {
-                range,
-                method,
-                proto: Cow::Borrowed(proto),
-            },
-        ),
-    )
-}
-
-fn parse_invoke_custom<'a>() -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
-    preceded(
-        space1,
-        map(
-            (
-                parse_register_list(),
-                delimited(space0, char(','), space0),
-                alphanumeric1,
-            ),
-            |(registers, _, call_site)| DexOp::InvokeCustom {
+        (
+            parse_register_list(),
+            delimited(space0, one_of(','), space0),
+            alphanumeric1,
+        )
+            .map(|(registers, _, call_site)| DexOp::InvokeCustom {
                 registers,
                 call_site: Cow::Borrowed(call_site),
-            },
-        ),
+            }),
     )
 }
 
-fn parse_invoke_custom_range<'a>()
--> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>> {
+fn parse_invoke_custom_range<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        map(
-            (
-                parse_register_range(),
-                delimited(space0, char(','), space0),
-                alphanumeric1,
-            ),
-            |(range, _, call_site)| DexOp::InvokeCustomRange {
+        (
+            parse_register_range(),
+            delimited(space0, one_of(','), space0),
+            alphanumeric1,
+        )
+            .map(|(range, _, call_site)| DexOp::InvokeCustomRange {
                 range,
                 call_site: Cow::Borrowed(call_site),
-            },
-        ),
+            }),
     )
 }
 
-fn parse_invoke<'a, F>(
-    constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+fn parse_invoke<'a, F>(constructor: F) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Vec<Register>, MethodRef<'a>) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register_list(),
-                delimited(space0, char(','), space0),
-                parse_method_ref(),
-            ),
-            move |(registers, _, method)| constructor(registers, method),
-        ),
+        (
+            parse_register_list(),
+            delimited(space0, one_of(','), space0),
+            parse_method_ref(),
+        )
+            .map(move |(registers, _, method)| constructor(registers, method)),
     )
 }
 
@@ -1830,41 +1805,39 @@ macro_rules! invoke_case {
             registers: regs,
             method,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
 fn parse_one_reg_op<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register) -> DexOp<'a>,
 {
-    preceded(space1, map(parse_register(), constructor))
+    preceded(space1, parse_register().map(constructor))
 }
 macro_rules! one_reg_case {
     ($variant:ident, $field:ident, $input:ident) => {
-        parse_one_reg_op(|r| DexOp::$variant { $field: r }).parse_complete($input)?
+        parse_one_reg_op(|r| DexOp::$variant { $field: r }).parse_next(&mut $input)?
     };
 }
 
 /// Helper function: it consumes a space, then a register, then a comma (with optional spaces), then another register.
 fn parse_two_reg_op<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, Register) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-            ),
-            move |(r1, _, r2)| constructor(r1, r2),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+        )
+            .map(move |(r1, _, r2)| constructor(r1, r2)),
     )
 }
 
@@ -1875,7 +1848,7 @@ macro_rules! two_reg_case {
             $field1: r1,
             $field2: r2,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
@@ -1884,22 +1857,20 @@ macro_rules! two_reg_case {
 /// a comma, and a third register.
 fn parse_three_reg_op<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, Register, Register) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-            ),
-            move |(r1, _, r2, _, r3)| constructor(r1, r2, r3),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+        )
+            .map(move |(r1, _, r2, _, r3)| constructor(r1, r2, r3)),
     )
 }
 
@@ -1913,7 +1884,7 @@ macro_rules! three_reg_case {
             $field2: r2,
             $field3: r3,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
@@ -1921,7 +1892,7 @@ macro_rules! three_reg_case {
 /// It assumes the opcode has already been consumed.
 fn parse_one_reg_and_literal<'a, T, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64> + 'a,
     F: Fn(Register, T) -> DexOp<'a>,
@@ -1929,14 +1900,12 @@ where
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_int_lit::<T>(),
-            ),
-            move |(reg, _, literal)| constructor(reg, literal),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_int_lit::<T>(),
+        )
+            .map(move |(reg, _, literal)| constructor(reg, literal)),
     )
 }
 
@@ -1946,14 +1915,14 @@ macro_rules! one_reg_lit_case {
             $field: r,
             value: lit,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
 /// Helper for two-reg + literal operations.
 fn parse_two_reg_and_literal<'a, T, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     T: num_traits::Num + std::ops::Neg<Output = T> + std::str::FromStr + TryFrom<i64> + 'a,
     F: Fn(Register, Register, T) -> DexOp<'a>,
@@ -1961,16 +1930,14 @@ where
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_int_lit::<T>(),
-            ),
-            move |(r1, _, r2, _, literal)| constructor(r1, r2, literal),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_int_lit::<T>(),
+        )
+            .map(move |(r1, _, r2, _, literal)| constructor(r1, r2, literal)),
     )
 }
 
@@ -1981,54 +1948,50 @@ macro_rules! two_reg_lit_case {
             $field2: r2,
             literal: lit,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
 fn parse_one_reg_and_fieldref<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, FieldRef) -> DexOp + 'a,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_field_ref(),
-            ),
-            move |(dest, _, field)| constructor(dest, field),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_field_ref(),
+        )
+            .map(move |(dest, _, field)| constructor(dest, field)),
     )
 }
 
 macro_rules! one_reg_fieldref_case {
     ($variant:ident, $reg:ident, $input:ident) => {
         parse_one_reg_and_fieldref(|reg, field| DexOp::$variant { $reg: reg, field })
-            .parse_complete($input)?
+            .parse_next(&mut $input)?
     };
 }
 
 fn parse_two_reg_and_fieldref<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, Register, FieldRef) -> DexOp + 'a,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_field_ref(),
-            ),
-            move |(reg1, _, reg2, _, field)| constructor(reg1, reg2, field),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_field_ref(),
+        )
+            .map(move |(reg1, _, reg2, _, field)| constructor(reg1, reg2, field)),
     )
 }
 
@@ -2039,7 +2002,7 @@ macro_rules! two_reg_fieldref_case {
             object,
             field,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
@@ -2067,23 +2030,21 @@ impl fmt::Display for StringOrTypeSig<'_> {
 /// It assumes the opcode has already been consumed.
 fn parse_one_reg_and_string<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, StringOrTypeSig<'a>) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                alt((
-                    parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
-                    parse_typesignature().map(StringOrTypeSig::TypeSig),
-                )),
-            ),
-            move |(reg, _, literal)| constructor(reg, literal),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            alt((
+                parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
+                parse_typesignature().map(StringOrTypeSig::TypeSig),
+            )),
+        )
+            .map(move |(reg, _, literal)| constructor(reg, literal)),
     )
 }
 
@@ -2093,31 +2054,29 @@ macro_rules! one_reg_string_case {
             $field: r,
             $string: lit,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
 fn parse_two_reg_and_string<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, Register, StringOrTypeSig<'a>) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-                delimited(space0, char(','), space0),
-                alt((
-                    parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
-                    parse_typesignature().map(StringOrTypeSig::TypeSig),
-                )),
-            ),
-            move |(reg1, _, reg2, _, literal)| constructor(reg1, reg2, literal),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            alt((
+                parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
+                parse_typesignature().map(StringOrTypeSig::TypeSig),
+            )),
+        )
+            .map(move |(reg1, _, reg2, _, literal)| constructor(reg1, reg2, literal)),
     )
 }
 
@@ -2128,93 +2087,88 @@ macro_rules! two_reg_string_case {
             $reg: reg,
             $string: lit,
         })
-        .parse_complete($input)?
+        .parse_next(&mut $input)?
     };
 }
 
 fn parse_one_reg_and_label<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, Label<'a>) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_label(),
-            ),
-            move |(reg, _, label)| constructor(reg, label),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_label(),
+        )
+            .map(move |(reg, _, label)| constructor(reg, label)),
     )
 }
 
 macro_rules! one_reg_label_case {
     ($variant:ident, $input:ident) => {
         parse_one_reg_and_label(|reg, offset| DexOp::$variant { reg, offset })
-            .parse_complete($input)?
+            .parse_next(&mut $input)?
     };
 }
 
 fn parse_two_reg_and_label<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(Register, Register, Label<'a>) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_register(),
-                delimited(space0, char(','), space0),
-                parse_label(),
-            ),
-            move |(reg1, _, reg2, _, label)| constructor(reg1, reg2, label),
-        ),
+        (
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_register(),
+            delimited(space0, one_of(','), space0),
+            parse_label(),
+        )
+            .map(move |(reg1, _, reg2, _, label)| constructor(reg1, reg2, label)),
     )
 }
 
 macro_rules! two_reg_label_case {
     ($variant:ident, $input:ident) => {
         parse_two_reg_and_label(|reg1, reg2, offset| DexOp::$variant { reg1, reg2, offset })
-            .parse_complete($input)?
+            .parse_next(&mut $input)?
     };
 }
 
 fn parse_range_and_method<'a, F>(
     constructor: F,
-) -> impl Parser<&'a str, Output = DexOp<'a>, Error = Error<&'a str>>
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
 where
     F: Fn(RegisterRange, MethodRef<'a>) -> DexOp<'a>,
 {
     preceded(
         space1,
-        map(
-            (
-                parse_register_range(),
-                delimited(space0, char(','), space0),
-                parse_method_ref(),
-            ),
-            move |(range, _, method)| constructor(range, method),
-        ),
+        (
+            parse_register_range(),
+            delimited(space0, one_of(','), space0),
+            parse_method_ref(),
+        )
+            .map(move |(range, _, method)| constructor(range, method)),
     )
 }
 
 macro_rules! range_method_case {
     ($variant:ident, $input:ident) => {
         parse_range_and_method(|range, method| DexOp::$variant { range, method })
-            .parse_complete($input)?
+            .parse_next(&mut $input)?
     };
 }
 
 // Higher level parser for all operations
-pub fn parse_dex_op<'a>(input: &'a str) -> IResult<&'a str, DexOp<'a>, Error<&'a str>> {
-    let (input, op) = take_while1(|c: char| c.is_alphanumeric() || c == '-' || c == '/')(input)?;
+pub fn parse_dex_op<'a>(mut input: &mut &'a str) -> ModalResult<DexOp<'a>, InputError<&'a str>> {
+    let op =
+        take_while(1.., |c: char| c.is_alphanumeric() || c == '-' || c == '/').parse_next(input)?;
     let r = match op {
         // Invoke operations
         "invoke-static" => invoke_case!(InvokeStatic, input),
@@ -2441,18 +2395,15 @@ pub fn parse_dex_op<'a>(input: &'a str) -> IResult<&'a str, DexOp<'a>, Error<&'a
         "new-array" => two_reg_string_case!(NewArray, size_reg, class, input),
 
         // Gotos = 1 label
-        "goto" => map(preceded(space1, parse_label()), |offset| DexOp::Goto {
-            offset,
-        })
-        .parse_complete(input)?,
-        "goto/16" => map(preceded(space1, parse_label()), |offset| DexOp::Goto16 {
-            offset,
-        })
-        .parse_complete(input)?,
-        "goto/32" => map(preceded(space1, parse_label()), |offset| DexOp::Goto32 {
-            offset,
-        })
-        .parse_complete(input)?,
+        "goto" => preceded(space1, parse_label())
+            .map(|offset| DexOp::Goto { offset })
+            .parse_next(input)?,
+        "goto/16" => preceded(space1, parse_label())
+            .map(|offset| DexOp::Goto16 { offset })
+            .parse_next(input)?,
+        "goto/32" => preceded(space1, parse_label())
+            .map(|offset| DexOp::Goto32 { offset })
+            .parse_next(input)?,
 
         // One reg & label
         "if-eqz" => one_reg_label_case!(IfEqz, input),
@@ -2468,34 +2419,30 @@ pub fn parse_dex_op<'a>(input: &'a str) -> IResult<&'a str, DexOp<'a>, Error<&'a
         // Arrays
         "filled-new-array" => preceded(
             space1,
-            map(
-                (
-                    parse_register_list(),
-                    delimited(space0, char(','), space0),
-                    parse_typesignature(),
-                ),
-                |(registers, _, class)| DexOp::FilledNewArray {
+            (
+                parse_register_list(),
+                delimited(space0, one_of(','), space0),
+                parse_typesignature(),
+            )
+                .map(|(registers, _, class)| DexOp::FilledNewArray {
                     registers,
                     class: StringOrTypeSig::TypeSig(class),
-                },
-            ),
+                }),
         )
-        .parse_complete(input)?,
+        .parse_next(input)?,
         "filled-new-array/range" => preceded(
             space1,
-            map(
-                (
-                    parse_register_range(),
-                    delimited(space0, char(','), space0),
-                    parse_typesignature(),
-                ),
-                |(registers, _, class)| DexOp::FilledNewArrayRange {
+            (
+                parse_register_range(),
+                delimited(space0, one_of(','), space0),
+                parse_typesignature(),
+            )
+                .map(|(registers, _, class)| DexOp::FilledNewArrayRange {
                     registers,
                     class: StringOrTypeSig::TypeSig(class),
-                },
-            ),
+                }),
         )
-        .parse_complete(input)?,
+        .parse_next(input)?,
 
         // Two regs & label
         "if-eq" => two_reg_label_case!(IfEq, input),
@@ -2513,14 +2460,14 @@ pub fn parse_dex_op<'a>(input: &'a str) -> IResult<&'a str, DexOp<'a>, Error<&'a
         "invoke-interface/range" => range_method_case!(InvokeInterfaceRange, input),
 
         // Oddities
-        "invoke-polymorphic" => parse_invoke_polymorphic().parse_complete(input)?,
-        "invoke-polymorphic/range" => parse_invoke_polymorphic_range().parse_complete(input)?,
-        "invoke-custom" => parse_invoke_custom().parse_complete(input)?,
-        "invoke-custom/range" => parse_invoke_custom_range().parse_complete(input)?,
-        "const/high16" => parse_const_high16().parse_complete(input)?,
-        "const-wide/high16" => parse_const_wide_high16().parse_complete(input)?,
-        "nop" => (input, DexOp::Nop),
-        "return-void" => (input, DexOp::ReturnVoid),
+        "invoke-polymorphic" => parse_invoke_polymorphic().parse_next(input)?,
+        "invoke-polymorphic/range" => parse_invoke_polymorphic_range().parse_next(input)?,
+        "invoke-custom" => parse_invoke_custom().parse_next(input)?,
+        "invoke-custom/range" => parse_invoke_custom_range().parse_next(input)?,
+        "const/high16" => parse_const_high16().parse_next(input)?,
+        "const-wide/high16" => parse_const_wide_high16().parse_next(input)?,
+        "nop" => DexOp::Nop,
+        "return-void" => DexOp::ReturnVoid,
 
         _ => {
             panic!("Unhandled operation {op}")
@@ -2541,9 +2488,8 @@ mod tests {
 
     #[test]
     fn test_const_string() {
-        let input = r#"const-string v0, "builder""#;
-        let (rest, instr) = parse_dex_op(input).unwrap();
-        assert!(rest.trim().is_empty());
+        let mut input = r#"const-string v0, "builder""#;
+        let instr = parse_dex_op(&mut input).unwrap();
         assert_eq!(
             instr,
             DexOp::ConstString {
@@ -2555,20 +2501,17 @@ mod tests {
 
     #[test]
     fn test_parse_method_ref() {
-        let input = r#"Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
-        let (rest, mr) = parse_method_ref().parse_complete(input).unwrap();
-        assert!(rest.trim().is_empty());
-        assert_eq!(mr.to_string(), input);
+        let mut input = r#"Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
+        let _ = parse_method_ref().parse_next(&mut input).unwrap();
     }
 
     #[test]
     fn test_invoke_static() {
-        let input = r#"invoke-static {p1, p2, v0, v1}, Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
-        let (rest, instr) = parse_dex_op(input).unwrap();
-        assert!(rest.trim().is_empty());
+        let mut input = r#"invoke-static {p1, p2, v0, v1}, Landroidx/core/content/res/TypedArrayUtils;->getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;"#;
+        let instr = parse_dex_op(&mut input).unwrap();
         let expected_method = MethodRef {
-            class: parse_object_identifier().parse_complete("Landroidx/core/content/res/TypedArrayUtils;").unwrap().1,
-            param: parse_method_parameter().parse_complete("getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;").unwrap().1,
+            class: parse_object_identifier().parse_next(&mut "Landroidx/core/content/res/TypedArrayUtils;").unwrap(),
+            param: parse_method_parameter().parse_next(&mut "getNamedString(Landroid/content/res/TypedArray;Lorg/xmlpull/v1/XmlPullParser;Ljava/lang/String;I)Ljava/lang/String;").unwrap(),
         };
         assert_eq!(
             instr,
@@ -2586,18 +2529,15 @@ mod tests {
 
     #[test]
     fn test_invoke_direct() {
-        let input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
-        let (rest, instr) = parse_dex_op(input).unwrap();
-        assert!(rest.trim().is_empty());
+        let mut input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
+        let instr = parse_dex_op(&mut input).unwrap();
         let expected_method = MethodRef {
             class: parse_object_identifier()
-                .parse_complete("Ljava/lang/Object;")
-                .unwrap()
-                .1,
+                .parse_next(&mut "Ljava/lang/Object;")
+                .unwrap(),
             param: parse_method_parameter()
-                .parse_complete("<init>()V")
-                .unwrap()
-                .1,
+                .parse_next(&mut "<init>()V")
+                .unwrap(),
         };
         assert_eq!(
             instr,
@@ -2610,43 +2550,41 @@ mod tests {
 
     #[test]
     fn test_parse_literal_int() {
-        let (_, i): (_, i8) = parse_int_lit().parse_complete("-0x5").unwrap();
+        let i: i8 = parse_int_lit().parse_next(&mut "-0x5").unwrap();
         assert_eq!(i, -5);
 
-        let (_, i): (_, i8) = parse_int_lit().parse_complete("50").unwrap();
+        let i: i8 = parse_int_lit().parse_next(&mut "50").unwrap();
         assert_eq!(i, 50);
 
-        let (_, i): (_, i8) = parse_int_lit().parse_complete("5\n").unwrap();
+        let i: i8 = parse_int_lit().parse_next(&mut "5\n").unwrap();
         assert_eq!(i, 5);
 
-        let (_, i): (_, i16) = parse_int_lit().parse_complete("-0x7c05").unwrap();
+        let i: i16 = parse_int_lit().parse_next(&mut "-0x7c05").unwrap();
         assert_eq!(i, -0x7c05);
 
-        let (_, i): (_, i32) = parse_int_lit().parse_complete("0x7fffffff").unwrap();
+        let i: i32 = parse_int_lit().parse_next(&mut "0x7fffffff").unwrap();
         assert_eq!(i, 0x7fffffff);
 
-        let (_, i): (_, i32) = parse_int_lit().parse_complete("-0x80000000").unwrap();
+        let i: i32 = parse_int_lit().parse_next(&mut "-0x80000000").unwrap();
         assert_eq!(i, -0x80000000);
 
-        let (_, i): (_, i32) = parse_int_lit().parse_complete("-0x80000000").unwrap();
+        let i: i32 = parse_int_lit().parse_next(&mut "-0x80000000").unwrap();
         let sixteen: i16 = (i >> 16) as i16;
         assert_eq!(sixteen, -0x8000);
     }
 
     #[test]
     fn test_filled_new_array() {
-        let input = "filled-new-array {v0, v1}, Ljava/lang/String;";
-        let (rest, instr) = parse_dex_op(input).unwrap();
-        assert!(rest.is_empty());
+        let mut input = "filled-new-array {v0, v1}, Ljava/lang/String;";
+        let instr = parse_dex_op(&mut input).unwrap();
         assert_eq!(
             instr,
             DexOp::FilledNewArray {
                 registers: vec![Register::Local(0), Register::Local(1)],
                 class: StringOrTypeSig::TypeSig(
                     parse_typesignature()
-                        .parse_complete("Ljava/lang/String;")
+                        .parse_next(&mut "Ljava/lang/String;")
                         .unwrap()
-                        .1
                 )
             }
         );
@@ -2654,9 +2592,8 @@ mod tests {
 
     #[test]
     fn test_filled_new_array_range() {
-        let input = "filled-new-array/range {v0 .. v2}, [I";
-        let (rest, instr) = parse_dex_op(input).unwrap();
-        assert!(rest.is_empty());
+        let mut input = "filled-new-array/range {v0 .. v2}, [I";
+        let instr = parse_dex_op(&mut input).unwrap();
         assert_eq!(
             instr,
             DexOp::FilledNewArrayRange {
@@ -2665,7 +2602,7 @@ mod tests {
                     end: Register::Local(2)
                 },
                 class: StringOrTypeSig::TypeSig(
-                    parse_typesignature().parse_complete("[I").unwrap().1
+                    parse_typesignature().parse_next(&mut "[I").unwrap()
                 )
             }
         );

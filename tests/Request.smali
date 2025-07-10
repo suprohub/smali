@@ -29,7 +29,7 @@
         "Lokhttp3/Headers;",
         "body",
         "Lokhttp3/RequestBody;",
-        "tags",
+        "literals",
         "",
         "Ljava/lang/Class;",
         "(Lokhttp3/HttpUrl;Ljava/lang/String;Lokhttp3/Headers;Lokhttp3/RequestBody;Ljava/util/Map;)V",
@@ -43,7 +43,7 @@
         "()Z",
         "lazyCacheControl",
         "()Ljava/lang/String;",
-        "getTags$okhttp",
+        "getliterals$okhttp",
         "()Ljava/util/Map;",
         "()Lokhttp3/HttpUrl;",
         "-deprecated_body",
@@ -55,7 +55,7 @@
         "-deprecated_method",
         "newBuilder",
         "Lokhttp3/Request$Builder;",
-        "tag",
+        "literal",
         "T",
         "type",
         "(Ljava/lang/Class;)Ljava/lang/Object;",
@@ -83,7 +83,7 @@
 
 .field private final method:Ljava/lang/String;
 
-.field private final tags:Ljava/util/Map;
+.field private final literals:Ljava/util/Map;
     .annotation system Ldalvik/annotation/Signature;
         value = {
             "Ljava/util/Map<",
@@ -128,7 +128,7 @@
 
     invoke-static {p3, v0}, Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
 
-    const-string v0, "tags"
+    const-string v0, "literals"
 
     invoke-static {p5, v0}, Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
 
@@ -148,7 +148,7 @@
     iput-object p4, p0, Lokhttp3/Request;->body:Lokhttp3/RequestBody;
 
     .line 33
-    iput-object p5, p0, Lokhttp3/Request;->tags:Ljava/util/Map;
+    iput-object p5, p0, Lokhttp3/Request;->literals:Ljava/util/Map;
 
     return-void
 .end method
@@ -275,7 +275,7 @@
     return-object v0
 .end method
 
-.method public final getTags$okhttp()Ljava/util/Map;
+.method public final getliterals$okhttp()Ljava/util/Map;
     .locals 1
     .annotation system Ldalvik/annotation/Signature;
         value = {
@@ -289,7 +289,7 @@
     .end annotation
 
     .line 33
-    iget-object v0, p0, Lokhttp3/Request;->tags:Ljava/util/Map;
+    iget-object v0, p0, Lokhttp3/Request;->literals:Ljava/util/Map;
 
     return-object v0
 .end method
@@ -380,20 +380,20 @@
     return-object v0
 .end method
 
-.method public final tag()Ljava/lang/Object;
+.method public final literal()Ljava/lang/Object;
     .locals 1
 
     .line 53
     const-class v0, Ljava/lang/Object;
 
-    invoke-virtual {p0, v0}, Lokhttp3/Request;->tag(Ljava/lang/Class;)Ljava/lang/Object;
+    invoke-virtual {p0, v0}, Lokhttp3/Request;->literal(Ljava/lang/Class;)Ljava/lang/Object;
 
     move-result-object v0
 
     return-object v0
 .end method
 
-.method public final tag(Ljava/lang/Class;)Ljava/lang/Object;
+.method public final literal(Ljava/lang/Class;)Ljava/lang/Object;
     .locals 1
     .annotation system Ldalvik/annotation/Signature;
         value = {
@@ -410,7 +410,7 @@
     invoke-static {p1, v0}, Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
 
     .line 59
-    iget-object v0, p0, Lokhttp3/Request;->tags:Ljava/util/Map;
+    iget-object v0, p0, Lokhttp3/Request;->literals:Ljava/util/Map;
 
     invoke-interface {v0, p1}, Ljava/util/Map;->get(Ljava/lang/Object;)Ljava/lang/Object;
 
@@ -549,7 +549,7 @@
 
     .line 129
     :cond_3
-    invoke-virtual {p0}, Lokhttp3/Request;->getTags$okhttp()Ljava/util/Map;
+    invoke-virtual {p0}, Lokhttp3/Request;->getliterals$okhttp()Ljava/util/Map;
 
     move-result-object v1
 
@@ -561,13 +561,13 @@
 
     if-eqz v1, :cond_4
 
-    const-string v1, ", tags="
+    const-string v1, ", literals="
 
     .line 130
     invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
     .line 131
-    invoke-virtual {p0}, Lokhttp3/Request;->getTags$okhttp()Ljava/util/Map;
+    invoke-virtual {p0}, Lokhttp3/Request;->getliterals$okhttp()Ljava/util/Map;
 
     move-result-object v1
 

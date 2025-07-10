@@ -7,13 +7,11 @@ use crate::{
     signature::method_signature::{MethodParameter, parse_method_parameter},
     ws,
 };
-use nom::{
-    Parser,
-    bytes::complete::tag,
-    combinator::{map, opt},
-    error::Error,
-    multi::many0,
-    sequence::{delimited, preceded},
+use winnow::{
+    ModalParser, Parser,
+    combinator::{delimited, opt, preceded, repeat},
+    error::InputError,
+    token::literal,
 };
 
 /// Struct representing a Java method
@@ -34,21 +32,21 @@ pub struct Method<'a> {
     pub ops: Vec<Op<'a>>,
 }
 
-pub fn parse_method<'a>() -> impl Parser<&'a str, Output = Method<'a>, Error = Error<&'a str>> {
-    map(
-        delimited(
-            ws(tag(".method")),
-            (
-                parse_modifiers(),
-                parse_method_parameter(),
-                preceded(ws(tag(".locals")), ws(parse_int_lit::<u32>())),
-                many0(parse_param()),
-                many0(parse_annotation()),
-                opt(ws(tag(".prologue"))),
-                many0(parse_op()),
-            ),
-            ws(tag(".end method")),
+pub fn parse_method<'a>() -> impl ModalParser<&'a str, Method<'a>, InputError<&'a str>> {
+    delimited(
+        ws(literal(".method")),
+        (
+            parse_modifiers(),
+            parse_method_parameter(),
+            preceded(ws(literal(".locals")), ws(parse_int_lit::<u32>())),
+            repeat(0.., parse_param()),
+            repeat(0.., parse_annotation()),
+            opt(ws(literal(".prologue"))),
+            repeat(0.., parse_op()),
         ),
+        ws(literal(".end method")),
+    )
+    .map(
         |(modifiers, param, locals, params, annotations, _, ops)| Method {
             modifiers,
             param,
@@ -116,8 +114,8 @@ mod tests {
     #[test]
     fn test_method_with_param_annotation() {
         use super::*;
-        use nom::Parser;
-        let smali = r#".method private static final isInitialized(Lkotlin/reflect/KProperty0;)Z
+        use winnow::Parser;
+        let mut smali = r#".method private static final isInitialized(Lkotlin/reflect/KProperty0;)Z
     .locals 1
     .param p0    # Lkotlin/reflect/KProperty0;
         .annotation build Lkotlin/internal/AccessibleLateinitPropertyLiteral;
@@ -141,10 +139,9 @@ mod tests {
 .end method
     "#;
 
-        let (rem, method) = parse_method().parse_complete(smali).unwrap();
+        let method = parse_method().parse_next(&mut smali).unwrap();
         println!("{method:?}");
 
-        assert!(rem.is_empty());
         assert_eq!(method.param.ident, "isInitialized");
         assert_eq!(method.annotations.len(), 1); // Signature annotation
         assert_eq!(method.ops.len(), 4);

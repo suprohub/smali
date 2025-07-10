@@ -2,18 +2,16 @@ use std::{
     borrow::Cow,
     fs,
     hash::{Hash, Hasher},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::Result;
 
-use nom::{
-    Parser,
-    bytes::complete::tag,
-    combinator::{map, opt},
-    error::Error,
-    multi::many0,
-    sequence::preceded,
+use winnow::{
+    ModalParser, Parser,
+    combinator::{opt, preceded, repeat},
+    error::InputError,
+    token::literal,
 };
 
 use crate::{
@@ -55,43 +53,38 @@ pub struct Class<'a> {
     pub fields: Vec<Field<'a>>,
     /// All the methods defined by the class
     pub methods: Vec<Method<'a>>,
-
-    // Internal
-    /// The file path where this class was loaded from (.smali file)
-    pub file_path: Option<PathBuf>,
 }
 
-pub fn parse_class<'a>() -> impl Parser<&'a str, Output = Class<'a>, Error = Error<&'a str>> {
-    map(
-        (
-            preceded(
-                ws(tag(".class")),
-                (parse_modifiers(), ws(parse_object_identifier())),
-            ),
-            preceded(ws(tag(".super")), ws(parse_object_identifier())),
-            opt(preceded(ws(tag(".source")), ws(parse_string_lit())).map(Cow::Borrowed)),
-            many0(preceded(
-                ws(tag(".implements")),
-                ws(parse_object_identifier()),
-            )),
-            many0(parse_annotation()),
-            many0(parse_field()),
-            many0(parse_method()),
+pub fn parse_class<'a>() -> impl ModalParser<&'a str, Class<'a>, InputError<&'a str>> {
+    (
+        preceded(
+            ws(literal(".class")),
+            (parse_modifiers(), ws(parse_object_identifier())),
         ),
-        |((modifiers, name), super_class, source, implements, annotations, fields, methods)| {
-            Class {
-                name,
-                modifiers,
-                source,
-                super_class,
-                implements,
-                annotations,
-                fields,
-                methods,
-                file_path: None,
-            }
-        },
+        preceded(ws(literal(".super")), ws(parse_object_identifier())),
+        opt(preceded(ws(literal(".source")), ws(parse_string_lit())).map(Cow::Borrowed)),
+        repeat(
+            0..,
+            preceded(ws(literal(".implements")), ws(parse_object_identifier())),
+        ),
+        repeat(0.., parse_annotation()),
+        repeat(0.., parse_field()),
+        repeat(0.., parse_method()),
     )
+        .map(
+            |((modifiers, name), super_class, source, implements, annotations, fields, methods)| {
+                Class {
+                    name,
+                    modifiers,
+                    source,
+                    super_class,
+                    implements,
+                    annotations,
+                    fields,
+                    methods,
+                }
+            },
+        )
 }
 
 impl Hash for Class<'_> {
@@ -137,66 +130,6 @@ impl<'a> Class<'a> {
             })
         } else {
             Ok(())
-        }
-    }
-
-    /// Writes the current SmaliClass to the specified directory, automatically creating sub-directories for packages
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    ///  use std::path::Path;
-    ///  use smali::types::SmaliClass;
-    ///
-    ///  let c = SmaliClass::read_from_file(Path::new("smali/com/cool/Class.smali")).expect("Uh oh, does the file exist?");
-    ///  c.write_to_directory(Path::new("smali_classes2")).unwrap();
-    ///
-    /// ```
-    pub fn write_to_directory(&self, path: &Path) -> Result<(), SmaliError> {
-        if !path.exists() {
-            let _ = fs::create_dir(path);
-        }
-
-        // Create package dir structure
-        let class_name = self.name.as_java_type();
-        let package_dirs: Vec<&str> = class_name.split('.').collect();
-        let mut dir = PathBuf::from(path);
-        for p in package_dirs[0..package_dirs.len() - 1].iter().copied() {
-            dir.push(p);
-            if !dir.exists() {
-                let _ = fs::create_dir(&dir);
-            }
-        }
-
-        // Create file
-        dir.push(package_dirs[package_dirs.len() - 1].to_string() + ".smali");
-
-        self.write_to_file(&dir)
-    }
-
-    /// Writes the class back to the file it was loaded from
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    ///  use std::path::Path;
-    ///  use smali::types::SmaliClass;
-    ///
-    ///  let mut c = SmaliClass::read_from_file(Path::new("smali/com/cool/Class.smali")).expect("Uh oh, does the file exist?");
-    ///  c.source = None;
-    ///  c.save().unwrap();
-    ///
-    /// ```
-    pub fn save(&self) -> Result<(), SmaliError> {
-        if let Some(p) = &self.file_path {
-            self.write_to_file(p)
-        } else {
-            Err(SmaliError {
-                details: format!(
-                    "Unable to save, no file_path set for class: {}",
-                    self.name.as_java_type()
-                ),
-            })
         }
     }
 }
@@ -266,31 +199,27 @@ mod tests {
     #[test]
     fn test_parse_class() {
         use super::*;
-        use nom::Parser;
+        use winnow::Parser;
 
         for dir in fs::read_dir("tests").unwrap() {
             let dir = dir.unwrap();
             println!("{:?}", dir.file_name());
             let smali = fs::read_to_string(dir.path()).unwrap();
-            let (_, _) = parse_class().parse_complete(&smali).unwrap();
+            let _ = parse_class().parse_next(&mut smali.as_str()).unwrap();
         }
     }
 
     #[test]
     fn test_read_write_class() {
         use super::*;
-        use nom::Parser;
+        use winnow::Parser;
 
         for dir in fs::read_dir("tests").unwrap() {
             let dir = dir.unwrap();
             println!("{:?}", dir.file_name());
             let smali = fs::read_to_string(dir.path()).unwrap();
 
-            let (i1, c) = parse_class().parse_complete(&smali).unwrap();
-            if !i1.is_empty() {
-                println!("remain {i1:?}");
-            }
-            assert!(i1.is_empty());
+            let c = parse_class().parse_next(&mut smali.as_str()).unwrap();
 
             assert!(!c.annotations.is_empty());
             assert!(!c.fields.is_empty());
@@ -299,12 +228,9 @@ mod tests {
             let second_smali = c.to_smali();
             //println!("b {c:?}");
 
-            let (i2, c2) = parse_class().parse_complete(&second_smali).unwrap();
-            if !i2.is_empty() {
-                println!("remain 1 {i1:?}");
-                println!("remain 2 {i2}");
-            }
-            assert!(i2.is_empty());
+            let c2 = parse_class()
+                .parse_next(&mut second_smali.as_str())
+                .unwrap();
 
             assert!(!c2.annotations.is_empty());
             assert!(!c2.fields.is_empty());

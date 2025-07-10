@@ -1,13 +1,10 @@
 use std::borrow::Cow;
 
-use nom::{
-    Parser,
-    bytes::complete::{tag, take_while},
-    character::complete::char,
-    combinator::{map, opt},
-    error::Error,
-    multi::many0,
-    sequence::{delimited, preceded},
+use winnow::{
+    ModalParser, Parser,
+    combinator::{delimited, opt, preceded, repeat},
+    error::InputError,
+    token::{literal, one_of, take_while},
 };
 
 use crate::{
@@ -31,45 +28,43 @@ pub struct Field<'a> {
     pub annotations: Vec<Annotation<'a>>,
 }
 
-pub fn parse_field<'a>() -> impl Parser<&'a str, Output = Field<'a>, Error = Error<&'a str>> {
-    map(
-        delimited(
-            ws(tag(".field")),
-            (
-                parse_modifiers(),
-                parse_type_parameter(),
-                opt(preceded(
-                    ws(char('=')),
-                    // TODO: This can be any type, needed fixes
-                    take_while(|c| c != '\n').map(Cow::Borrowed),
-                )),
-                many0(parse_annotation()),
-            ),
-            opt(ws(tag(".end field"))),
+pub fn parse_field<'a>() -> impl ModalParser<&'a str, Field<'a>, InputError<&'a str>> {
+    delimited(
+        ws(literal(".field")),
+        (
+            parse_modifiers(),
+            parse_type_parameter(),
+            opt(preceded(
+                ws(one_of('=')),
+                // TODO: This can be any type, needed fixes
+                take_while(0.., |c| c != '\n').map(Cow::Borrowed),
+            )),
+            repeat(0.., parse_annotation()),
         ),
-        |(modifiers, param, i, annotations)| Field {
-            modifiers,
-            param,
-            initial_value: i,
-            annotations,
-        },
+        opt(ws(literal(".end field"))),
     )
+    .map(|(modifiers, param, i, annotations)| Field {
+        modifiers,
+        param,
+        initial_value: i,
+        annotations,
+    })
 }
 
 mod tests {
     #[test]
     fn test_parse_field() {
         use crate::field::parse_field;
-        use nom::Parser;
-        let (_, f) = parse_field()
-            .parse_complete(".field private final sentRequestAtMillis:J\n\n#aa")
+        use winnow::Parser;
+        let f = parse_field()
+            .parse_next(&mut ".field private final sentRequestAtMillis:J\n\n#aa")
             .unwrap();
         assert_eq!(f.param.ident, "sentRequestAtMillis".to_string());
         assert_eq!(f.modifiers.len(), 2);
         assert_eq!(f.param.ts.to_jni(), "J");
 
-        let (_, f) = parse_field()
-            .parse_complete(".field private final body:Lokhttp3/ResponseBody;")
+        let f = parse_field()
+            .parse_next(&mut ".field private final body:Lokhttp3/ResponseBody;")
             .unwrap();
         assert_eq!(f.param.ident, "body".to_string());
         assert_eq!(f.modifiers.len(), 2);

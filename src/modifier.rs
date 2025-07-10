@@ -1,7 +1,10 @@
 use std::str::FromStr;
 
-use nom::{
-    Parser, branch::alt, bytes::complete::tag, combinator::value, error::Error, multi::many0,
+use winnow::{
+    ModalParser, Parser,
+    combinator::{alt, repeat},
+    error::InputError,
+    token::literal,
 };
 
 use crate::{SmaliError, ws};
@@ -89,28 +92,30 @@ impl Modifier {
     }
 }
 
-pub fn parse_modifiers<'a>() -> impl Parser<&'a str, Output = Vec<Modifier>, Error = Error<&'a str>>
-{
-    many0(ws(alt((
-        value(Modifier::Public, tag("public")),
-        value(Modifier::Protected, tag("protected")),
-        value(Modifier::Private, tag("private")),
-        value(Modifier::Static, tag("static")),
-        value(Modifier::Final, tag("final")),
-        value(Modifier::Abstract, tag("abstract")),
-        value(Modifier::Interface, tag("interface")),
-        value(Modifier::Synthetic, tag("synthetic")),
-        value(Modifier::Transient, tag("transient")),
-        value(Modifier::Volatile, tag("volatile")),
-        value(Modifier::Synchronized, tag("synchronized")),
-        value(Modifier::Native, tag("native")),
-        value(Modifier::Varargs, tag("varargs")),
-        value(Modifier::Annotation, tag("annotation")),
-        value(Modifier::Enum, tag("enum")),
-        value(Modifier::Strict, tag("strict")),
-        value(Modifier::Bridge, tag("bridge")),
-        value(Modifier::Constructor, tag("constructor")),
-    ))))
+pub fn parse_modifiers<'a>() -> impl ModalParser<&'a str, Vec<Modifier>, InputError<&'a str>> {
+    repeat(
+        0..,
+        ws(alt((
+            literal("public").value(Modifier::Public),
+            literal("protected").value(Modifier::Protected),
+            literal("private").value(Modifier::Private),
+            literal("static").value(Modifier::Static),
+            literal("final").value(Modifier::Final),
+            literal("abstract").value(Modifier::Abstract),
+            literal("interface").value(Modifier::Interface),
+            literal("synthetic").value(Modifier::Synthetic),
+            literal("transient").value(Modifier::Transient),
+            literal("volatile").value(Modifier::Volatile),
+            literal("synchronized").value(Modifier::Synchronized),
+            literal("native").value(Modifier::Native),
+            literal("varargs").value(Modifier::Varargs),
+            literal("annotation").value(Modifier::Annotation),
+            literal("enum").value(Modifier::Enum),
+            literal("strict").value(Modifier::Strict),
+            literal("bridge").value(Modifier::Bridge),
+            literal("constructor").value(Modifier::Constructor),
+        ))),
+    )
 }
 
 pub fn write_modifiers(mods: &Vec<Modifier>) -> String {

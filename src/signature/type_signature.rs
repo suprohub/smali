@@ -1,15 +1,12 @@
 use std::{borrow::Cow, fmt};
 
-use nom::{
-    Parser,
-    branch::alt,
-    bytes::complete::take_while,
-    character::char,
-    combinator::{map, value},
-    error::Error,
-    sequence::{delimited, preceded, terminated},
-};
 use serde::{Deserialize, Serialize};
+use winnow::{
+    ModalParser, Parser,
+    combinator::{alt, delimited, preceded, terminated},
+    error::InputError,
+    token::{one_of, take_while},
+};
 
 use crate::{
     object_identifier::{ObjectIdentifier, parse_object_identifier},
@@ -60,11 +57,10 @@ impl fmt::Display for TypeSignature<'_> {
 }
 
 impl TypeSignature<'_> {
-    pub fn from_jni(s: &str) -> TypeSignature {
-        let (_, ts) = parse_typesignature()
-            .parse_complete(s)
-            .unwrap_or_else(|_| panic!("Could not parse TypeSignature: {s}"));
-        ts
+    pub fn from_jni(mut s: &str) -> TypeSignature {
+        parse_typesignature()
+            .parse_next(&mut s)
+            .unwrap_or_else(|_| panic!("Could not parse TypeSignature: {s}"))
     }
 
     pub fn to_jni(&self) -> String {
@@ -124,63 +120,53 @@ pub struct TypeParameter<'a> {
 }
 
 pub fn parse_type_parameter<'a>()
--> impl Parser<&'a str, Output = TypeParameter<'a>, Error = Error<&'a str>> {
-    map(
-        (
-            terminated(
-                take_while(|c: char| c.is_alphanumeric() || c == '_'),
-                char(':'),
-            ),
-            |input| {
-                //println!("test2");
-                parse_typesignature().parse_complete(input)
-            },
+-> impl ModalParser<&'a str, TypeParameter<'a>, InputError<&'a str>> {
+    (
+        terminated(
+            take_while(0.., |c: char| c.is_alphanumeric() || c == '_'),
+            one_of(':'),
         ),
-        |(ident, ts)| TypeParameter {
-            ident: ident.into(),
-            ts,
+        |input: &mut &'a str| {
+            //println!("test2");
+            parse_typesignature().parse_next(input)
         },
     )
+        .map(|(ident, ts)| TypeParameter {
+            ident: ident.into(),
+            ts,
+        })
 }
 
 // Its needed to be recursive, sadly ;(
 pub(crate) fn parse_typesignature<'a>()
--> impl Parser<&'a str, Output = TypeSignature<'a>, Error = Error<&'a str>> {
+-> impl ModalParser<&'a str, TypeSignature<'a>, InputError<&'a str>> {
     ws(alt((
         alt((
-            value(TypeSignature::Bool, char('Z')),
-            value(TypeSignature::Byte, char('B')),
-            value(TypeSignature::Char, char('C')),
-            value(TypeSignature::Short, char('S')),
-            value(TypeSignature::Int, char('I')),
-            value(TypeSignature::Long, char('J')),
-            value(TypeSignature::Float, char('F')),
-            value(TypeSignature::Double, char('D')),
-            value(TypeSignature::Void, char('V')),
-            value(TypeSignature::WildcardStar, char('*')),
-            value(TypeSignature::WildcardPlus, char('+')),
-            value(TypeSignature::WildcardMinus, char('-')),
+            one_of('Z').value(TypeSignature::Bool),
+            one_of('B').value(TypeSignature::Byte),
+            one_of('C').value(TypeSignature::Char),
+            one_of('S').value(TypeSignature::Short),
+            one_of('I').value(TypeSignature::Int),
+            one_of('J').value(TypeSignature::Long),
+            one_of('F').value(TypeSignature::Float),
+            one_of('D').value(TypeSignature::Double),
+            one_of('V').value(TypeSignature::Void),
+            one_of('*').value(TypeSignature::WildcardStar),
+            one_of('+').value(TypeSignature::WildcardPlus),
+            one_of('-').value(TypeSignature::WildcardMinus),
         )),
-        map(
-            (parse_type_parameters(), |input| {
-                parse_typesignature().parse_complete(input)
-            }),
-            |(ts, ts_rest)| TypeSignature::TypeParameters(ts, Box::new(ts_rest)),
-        ),
-        map(parse_type_parameter(), |t| {
-            TypeSignature::TypeParameter(Box::new(t))
-        }),
-        map(parse_object_identifier(), TypeSignature::Object),
-        map(
-            delimited(char('T'), take_while(|x| x != ';'), char(';')),
-            |name: &str| TypeSignature::TypeVariableSignature(Cow::Borrowed(name)),
-        ),
-        map(
-            preceded(char('['), |input| {
-                parse_typesignature().parse_complete(input)
-            }),
-            |arr| TypeSignature::Array(Box::new(arr)),
-        ),
+        (parse_type_parameters(), |input: &mut &'a str| {
+            parse_typesignature().parse_next(input)
+        })
+            .map(|(ts, ts_rest)| TypeSignature::TypeParameters(ts, Box::new(ts_rest))),
+        parse_type_parameter().map(|t| TypeSignature::TypeParameter(Box::new(t))),
+        parse_object_identifier().map(TypeSignature::Object),
+        delimited(one_of('T'), take_while(0.., |x| x != ';'), one_of(';'))
+            .map(|name: &str| TypeSignature::TypeVariableSignature(Cow::Borrowed(name))),
+        preceded(one_of('['), |input: &mut &'a str| {
+            parse_typesignature().parse_next(input)
+        })
+        .map(|arr| TypeSignature::Array(Box::new(arr))),
     )))
 }
 
@@ -192,13 +178,13 @@ mod tests {
     #[test]
     fn test_typesignature() {
         use super::*;
-        use nom::Parser;
-        let (_, t) = parse_typesignature().parse_complete("[B").unwrap();
+        use winnow::Parser;
+        let t = parse_typesignature().parse_next(&mut "[B").unwrap();
         println!("{t:?}");
-        let (_, t) = parse_typesignature().parse_complete("V").unwrap();
+        let t = parse_typesignature().parse_next(&mut "V").unwrap();
         println!("{t:?}");
-        let (_, t) = parse_typesignature()
-            .parse_complete("Lcom/none/Class;")
+        let t = parse_typesignature()
+            .parse_next(&mut "Lcom/none/Class;")
             .unwrap();
         println!("{t:?}");
     }
@@ -229,10 +215,10 @@ mod tests {
     #[test]
     fn test_signature4() {
         use super::*;
-        use nom::Parser;
+        use winnow::Parser;
 
-        let ts = "CONSTANT_FIELD:I";
-        let o = parse_type_parameter().parse(ts).unwrap().1;
+        let mut ts = "CONSTANT_FIELD:I";
+        let o = parse_type_parameter().parse_next(&mut ts).unwrap();
         println!("{o:?}");
     }
 }

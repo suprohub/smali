@@ -1,15 +1,12 @@
 use std::borrow::Cow;
 
-use nom::{
-    Parser,
-    bytes::complete::take_until,
-    character::complete::char,
-    combinator::{map, opt},
-    error::Error,
-    multi::many0,
-    sequence::{delimited, preceded},
-};
 use serde::{Deserialize, Serialize};
+use winnow::{
+    ModalParser, Parser,
+    combinator::{delimited, opt, preceded, repeat},
+    error::InputError,
+    token::{one_of, take_until},
+};
 
 use crate::signature::{
     parse_type_parameters,
@@ -35,11 +32,10 @@ pub struct MethodSignature<'a> {
 }
 
 impl MethodSignature<'_> {
-    pub fn from_jni(s: &str) -> MethodSignature {
-        let (_, m) = parse_methodsignature()
-            .parse_complete(s)
-            .expect("Can't parse MethodSignature");
-        m
+    pub fn from_jni(mut s: &str) -> MethodSignature {
+        parse_methodsignature()
+            .parse_next(&mut s)
+            .expect("Can't parse MethodSignature")
     }
 
     pub fn to_jni(&self) -> String {
@@ -73,48 +69,43 @@ pub struct MethodParameter<'a> {
 }
 
 pub fn parse_method_parameter<'a>()
--> impl Parser<&'a str, Output = MethodParameter<'a>, Error = Error<&'a str>> {
-    map((take_until("("), parse_methodsignature()), |(ident, ms)| {
-        MethodParameter {
-            ident: ident.into(),
-            ms,
-        }
+-> impl ModalParser<&'a str, MethodParameter<'a>, InputError<&'a str>> {
+    (take_until(0.., "("), parse_methodsignature()).map(|(ident, ms)| MethodParameter {
+        ident: ident.into(),
+        ms,
     })
 }
 
-fn parse_arguments<'a>()
--> impl Parser<&'a str, Output = Vec<TypeSignature<'a>>, Error = Error<&'a str>> {
-    delimited(char('('), many0(parse_typesignature()), char(')'))
+fn parse_arguments<'a>() -> impl ModalParser<&'a str, Vec<TypeSignature<'a>>, InputError<&'a str>> {
+    delimited(one_of('('), repeat(0.., parse_typesignature()), one_of(')'))
 }
 
 pub(crate) fn parse_methodsignature<'a>()
--> impl Parser<&'a str, Output = MethodSignature<'a>, Error = Error<&'a str>> {
-    map(
-        (
-            opt(parse_type_parameters()),
-            parse_arguments(),
-            parse_typesignature(),
-            opt(preceded(char('^'), parse_typesignature())),
-        ),
-        |(type_parameters, args, result, throws)| MethodSignature {
+-> impl ModalParser<&'a str, MethodSignature<'a>, InputError<&'a str>> {
+    (
+        opt(parse_type_parameters()),
+        parse_arguments(),
+        parse_typesignature(),
+        opt(preceded(one_of('^'), parse_typesignature())),
+    )
+        .map(|(type_parameters, args, result, throws)| MethodSignature {
             type_parameters,
             args,
             result,
             throws,
-        },
-    )
+        })
 }
 
 #[cfg(test)]
 mod tests {
-    use nom::Parser;
+    use winnow::Parser;
 
     use crate::signature::method_signature::{MethodSignature, parse_method_parameter};
 
     #[test]
     fn test_methodsignature() {
-        let (_, t) = parse_method_parameter()
-            .parse_complete("<init>()V")
+        let t = parse_method_parameter()
+            .parse_next(&mut "<init>()V")
             .unwrap();
         println!("{t:?}");
     }

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use nom::{Parser, bytes::complete::tag, combinator::map, error::Error, sequence::terminated};
+use winnow::{ModalParser, Parser, combinator::terminated, error::InputError, token::literal};
 
 use crate::{
     object_identifier::{ObjectIdentifier, parse_object_identifier},
@@ -32,13 +32,10 @@ impl fmt::Display for MethodRef<'_> {
 ///    L<class>;-><method>(<args>)<ret>
 /// For example:
 ///    Lkotlin/jvm/internal/Intrinsics;->checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V
-pub fn parse_method_ref<'a>() -> impl Parser<&'a str, Output = MethodRef<'a>, Error = Error<&'a str>>
-{
-    map(
-        (
-            terminated(parse_object_identifier(), tag("->")),
-            parse_method_parameter(),
-        ),
-        |(class, param)| MethodRef { class, param },
+pub fn parse_method_ref<'a>() -> impl ModalParser<&'a str, MethodRef<'a>, InputError<&'a str>> {
+    (
+        terminated(parse_object_identifier(), literal("->")),
+        parse_method_parameter(),
     )
+        .map(|(class, param)| MethodRef { class, param })
 }

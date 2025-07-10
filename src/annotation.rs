@@ -1,14 +1,11 @@
 use std::{borrow::Cow, str::FromStr};
 
-use nom::{
-    Parser,
-    branch::alt,
-    bytes::complete::{tag, take_till},
-    character::complete::{alphanumeric1, char},
-    combinator::{map, opt, value},
-    error::Error,
-    multi::{many0, separated_list0},
-    sequence::{delimited, preceded, terminated},
+use winnow::{
+    ModalParser, Parser,
+    ascii::alphanumeric1,
+    combinator::{alt, delimited, opt, preceded, repeat, separated, terminated},
+    error::InputError,
+    token::{literal, one_of, take_till},
 };
 
 use crate::{
@@ -38,12 +35,12 @@ impl AnnotationVisibility {
     }
 }
 
-pub fn parse_visibility<'a>()
--> impl Parser<&'a str, Output = AnnotationVisibility, Error = Error<&'a str>> {
+pub fn parse_visibility<'a>() -> impl ModalParser<&'a str, AnnotationVisibility, InputError<&'a str>>
+{
     ws(alt((
-        value(AnnotationVisibility::Build, tag("build")),
-        value(AnnotationVisibility::Runtime, tag("runtime")),
-        value(AnnotationVisibility::System, tag("system")),
+        literal("build").value(AnnotationVisibility::Build),
+        literal("runtime").value(AnnotationVisibility::Runtime),
+        literal("system").value(AnnotationVisibility::System),
     )))
 }
 
@@ -93,73 +90,63 @@ pub struct Annotation<'a> {
     pub elements: Vec<AnnotationElement<'a>>,
 }
 
-pub fn parse_annotation<'a>()
--> impl Parser<&'a str, Output = Annotation<'a>, Error = Error<&'a str>> {
-    map(
-        delimited(
-            ws(alt((tag(".annotation"), tag(".subannotation")))),
-            (
-                opt(parse_visibility()),
-                parse_typesignature(),
-                many0(parse_annotation_element()),
-            ),
-            ws(alt((tag(".end annotation"), tag(".end subannotation")))),
+pub fn parse_annotation<'a>() -> impl ModalParser<&'a str, Annotation<'a>, InputError<&'a str>> {
+    delimited(
+        ws(alt((literal(".annotation"), literal(".subannotation")))),
+        (
+            opt(parse_visibility()),
+            parse_typesignature(),
+            repeat(0.., parse_annotation_element()),
         ),
-        |(v, annotation_type, elements)| Annotation {
-            visibility: v.unwrap_or(AnnotationVisibility::System),
-            annotation_type,
-            elements,
-        },
+        ws(alt((
+            literal(".end annotation"),
+            literal(".end subannotation"),
+        ))),
     )
+    .map(|(v, annotation_type, elements)| Annotation {
+        visibility: v.unwrap_or(AnnotationVisibility::System),
+        annotation_type,
+        elements,
+    })
 }
 
 pub fn parse_annotation_element<'a>()
--> impl Parser<&'a str, Output = AnnotationElement<'a>, Error = Error<&'a str>> {
-    map(
-        (
-            terminated(ws(alphanumeric1), ws(char('='))),
-            parse_annotation_value(),
-        ),
-        |(name, value)| AnnotationElement {
+-> impl ModalParser<&'a str, AnnotationElement<'a>, InputError<&'a str>> {
+    (
+        terminated(ws(alphanumeric1), ws(one_of('='))),
+        parse_annotation_value(),
+    )
+        .map(|(name, value)| AnnotationElement {
             name: name.into(),
             value,
-        },
-    )
+        })
 }
 
 pub fn parse_annotation_value<'a>()
--> impl Parser<&'a str, Output = AnnotationValue<'a>, Error = Error<&'a str>> {
+-> impl ModalParser<&'a str, AnnotationValue<'a>, InputError<&'a str>> {
     alt((
-        map(
-            |input| parse_annotation().parse_complete(input),
-            AnnotationValue::SubAnnotation,
-        ),
-        map(preceded(ws(tag(".enum")), parse_field_ref()), |f| {
-            AnnotationValue::Enum(f)
-        }),
-        map(
-            delimited(
-                ws(char('{')),
-                separated_list0(ws(char(',')), |input| {
-                    parse_annotation_value().parse_complete(input)
-                }),
-                ws(char('}')),
+        (|input: &mut &'a str| parse_annotation().parse_next(input))
+            .map(AnnotationValue::SubAnnotation),
+        preceded(ws(literal(".enum")), parse_field_ref()).map(AnnotationValue::Enum),
+        delimited(
+            ws(one_of('{')),
+            separated(
+                0..,
+                |input: &mut &'a str| parse_annotation_value().parse_next(input),
+                ws(one_of(',')),
             ),
-            AnnotationValue::Array,
-        ),
-        map(parse_string_lit(), |s: &'a str| {
-            AnnotationValue::String(s.into())
-        }),
+            ws(one_of('}')),
+        )
+        .map(AnnotationValue::Array),
+        parse_string_lit().map(|s: &'a str| AnnotationValue::String(s.into())),
         // TODO: This can be any type, needed fixes
-        map(
-            take_till(|c| c == ',' || c == '}' || c == '\n'),
-            |s: &'a str| AnnotationValue::Any(s.into()),
-        ),
+        take_till(0.., |c| c == ',' || c == '}' || c == '\n')
+            .map(|s: &'a str| AnnotationValue::Any(s.into())),
     ))
 }
 
 pub fn write_annotation(ann: &Annotation, subannotation: bool, indented: bool) -> String {
-    let end_tag;
+    let end_literal;
     let mut indent = "";
     let inset = "    ";
     if indented && subannotation {
@@ -169,10 +156,10 @@ pub fn write_annotation(ann: &Annotation, subannotation: bool, indented: bool) -
     }
 
     let mut out = if subannotation {
-        end_tag = ".end subannotation";
+        end_literal = ".end subannotation";
         ".subannotation ".to_string()
     } else {
-        end_tag = ".end annotation";
+        end_literal = ".end annotation";
         format!("{}.annotation {} ", indent, ann.visibility.to_str())
     };
     out.push_str(&ann.annotation_type.to_jni());
@@ -184,7 +171,7 @@ pub fn write_annotation(ann: &Annotation, subannotation: bool, indented: bool) -
     }
 
     out.push_str(indent);
-    out.push_str(end_tag);
+    out.push_str(end_literal);
     out.push('\n');
 
     out
@@ -238,9 +225,9 @@ mod tests {
     #[test]
     fn test_parse_annotation_element_array() {
         use super::*;
-        use nom::Parser;
-        let (_, a) = parse_annotation_element()
-            .parse_complete(" key = {\n  \"a,\", \n \"b\\\"\", \"c\" \n }\n")
+        use winnow::Parser;
+        let a = parse_annotation_element()
+            .parse_next(&mut " key = {\n  \"a,\", \n \"b\\\"\", \"c\" \n }\n")
             .unwrap();
         assert_eq!(a.name, "key");
         match a.value {
@@ -252,7 +239,7 @@ mod tests {
             }
         }
 
-        let (_, a) = parse_annotation_element().parse_complete(" value = .enum Ljava/lang/annotation/RetentionPolicy;->SOURCE:Ljava/lang/annotation/RetentionPolicy;\n").unwrap();
+        let a = parse_annotation_element().parse_next(&mut " value = .enum Ljava/lang/annotation/RetentionPolicy;->SOURCE:Ljava/lang/annotation/RetentionPolicy;\n").unwrap();
         match a.value {
             AnnotationValue::Enum(f) => {
                 assert_eq!(f.param.ident, "SOURCE");

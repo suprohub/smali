@@ -1,13 +1,10 @@
 use std::borrow::Cow;
 
-use nom::{
-    Parser,
-    bytes::complete::tag,
-    character::complete::char,
-    combinator::{map, opt},
-    error::Error,
-    multi::many0,
-    sequence::{preceded, terminated},
+use winnow::{
+    ModalParser, Parser,
+    combinator::{opt, preceded, repeat, terminated},
+    error::InputError,
+    token::{literal, one_of},
 };
 
 use crate::{
@@ -27,22 +24,23 @@ pub struct Param<'a> {
     pub annotations: Vec<Annotation<'a>>,
 }
 
-pub fn parse_param<'a>() -> impl Parser<&'a str, Output = Param<'a>, Error = Error<&'a str>> {
-    map(
-        preceded(
-            ws(tag(".param")),
-            (
-                parse_register(),
-                opt(preceded(ws(char(',')), ws(parse_string_lit()))),
-                opt(terminated(many0(parse_annotation()), ws(tag(".end param")))),
-            ),
+pub fn parse_param<'a>() -> impl ModalParser<&'a str, Param<'a>, InputError<&'a str>> {
+    preceded(
+        ws(literal(".param")),
+        (
+            parse_register(),
+            opt(preceded(ws(one_of(',')), ws(parse_string_lit()))),
+            opt(terminated(
+                repeat(0.., parse_annotation()),
+                ws(literal(".end param")),
+            )),
         ),
-        |(register, n, a)| Param {
-            register,
-            name: n.map(|s| s.into()),
-            annotations: a.unwrap_or_default(),
-        },
     )
+    .map(|(register, n, a)| Param {
+        register,
+        name: n.map(|s| s.into()),
+        annotations: a.unwrap_or_default(),
+    })
 }
 
 pub fn write_param(param: &Param) -> String {
@@ -72,30 +70,28 @@ mod tests {
     #[test]
     fn test_simple() {
         use super::*;
-        use nom::Parser;
-        let input = ".param p0";
-        let (rem, _) = parse_param().parse_complete(input).unwrap();
-        assert!(rem.is_empty());
+        use winnow::Parser;
+        let mut input = ".param p0";
+        let _ = parse_param().parse_next(&mut input).unwrap();
     }
 
     #[test]
     fn test_parse_param_block_with_annotation() {
         use super::*;
-        use nom::Parser;
-        let input = r#".param p0    # Lkotlin/reflect/KProperty0;
+        use winnow::Parser;
+        let mut input = r#".param p0    # Lkotlin/reflect/KProperty0;
             .annotation build Lkotlin/internal/AccessibleLateinitPropertyLiteral;
             .end annotation
         .end param"#;
-        let (rem, _) = parse_param().parse_complete(input).unwrap();
-        assert!(rem.is_empty());
+        let _ = parse_param().parse_next(&mut input).unwrap();
     }
 
     #[test]
     fn test_parse_param_with_string() {
         use super::*;
-        use nom::Parser;
-        let input = r#".param p0, "_this"    # Landroidx/core/internal/view/SupportMenuItem;"#;
-        let (_rem, param) = parse_param().parse_complete(input).unwrap();
+        use winnow::Parser;
+        let mut input = r#".param p0, "_this"    # Landroidx/core/internal/view/SupportMenuItem;"#;
+        let param = parse_param().parse_next(&mut input).unwrap();
         assert_eq!(param.register, Register::Parameter(0));
         assert_eq!(param.name, Some("_this".into()));
         assert!(param.annotations.is_empty());

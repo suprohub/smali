@@ -3,14 +3,12 @@
 
 use std::fmt::{self, Debug};
 
-use nom::{
-    Parser,
-    branch::alt,
-    bytes::complete::{escaped, tag, take_while, take_while1},
-    character::complete::{char, multispace0, none_of, one_of},
-    combinator::{map, map_res, opt},
-    error::Error,
-    sequence::{delimited, preceded},
+use winnow::{
+    ModalParser, Parser,
+    ascii::{multispace0, take_escaped},
+    combinator::{alt, delimited, opt, preceded},
+    error::InputError,
+    token::{literal, none_of, one_of, take_while},
 };
 
 pub mod annotation;
@@ -45,16 +43,16 @@ impl fmt::Display for SmaliError {
     }
 }
 
-pub fn ws<'a, O, F>(inner: F) -> impl Parser<&'a str, Output = O, Error = Error<&'a str>>
+pub fn ws<'a, O, F>(inner: F) -> impl ModalParser<&'a str, O, InputError<&'a str>>
 where
-    F: Parser<&'a str, Output = O, Error = Error<&'a str>>,
+    F: ModalParser<&'a str, O, InputError<&'a str>>,
 {
     delimited(
         multispace0,
         inner,
         (
             multispace0,
-            opt((comment(), |i: &'a str| {
+            opt((comment(), |i: &mut &'a str| {
                 //println!("test1 {:?}", i.chars().take(50).collect::<String>());
                 multispace0(i)
             })),
@@ -62,46 +60,46 @@ where
     )
 }
 
-pub fn comment<'a>() -> impl Parser<&'a str, Output = &'a str, Error = Error<&'a str>> {
-    preceded(char('#'), take_while(|c| c != '\n'))
+pub fn comment<'a>() -> impl ModalParser<&'a str, &'a str, InputError<&'a str>> {
+    preceded(one_of('#'), take_while(0.., |c| c != '\n'))
 }
 
 /// Parses a string literal that may be empty.
 /// For example, it can parse `""` as well as `"builder"`.
-pub fn parse_string_lit<'a>() -> impl Parser<&'a str, Output = &'a str, Error = Error<&'a str>> {
+pub fn parse_string_lit<'a>() -> impl ModalParser<&'a str, &'a str, InputError<&'a str>> {
     delimited(
-        (multispace0, char('"')),
+        (multispace0, one_of('"')),
         alt((
-            escaped(none_of("\\\""), '\\', one_of("'\"tbnrfu\\")),
-            tag(""),
+            take_escaped(
+                none_of(['\\', '\"']),
+                '\\',
+                one_of(['\'', '\"', 't', 'b', 'n', 'r', 'f', 'u', '\\']),
+            ),
+            literal(""),
         )),
-        char('"'),
+        one_of('"'),
     )
 }
 
-pub(crate) fn parse_int_lit<'a, T>() -> impl Parser<&'a str, Output = T, Error = Error<&'a str>>
+pub(crate) fn parse_int_lit<'a, T>() -> impl ModalParser<&'a str, T, InputError<&'a str>>
 where
     T: num_traits::Num + std::str::FromStr + TryFrom<i64>,
     <T as TryFrom<i64>>::Error: Debug,
 {
-    map_res(
-        (
-            opt(char::<&str, Error<&str>>('-')),
-            alt((
-                map(
-                    preceded(
-                        alt((tag("0x"), tag("0X"))),
-                        take_while1(|c: char| c.is_ascii_hexdigit()),
-                    ),
-                    |s| (16, s),
-                ),
-                map(take_while1(|c: char| c.is_ascii_digit()), |s| (10, s)),
-            )),
-            opt(char('L')),
-        ),
-        |(sign, (base, digits), _)| match sign {
+    (
+        opt(one_of('-')),
+        alt((
+            preceded(
+                alt((literal("0x"), literal("0X"))),
+                take_while(0.., |c: char| c.is_ascii_hexdigit()),
+            )
+            .map(|s| (16, s)),
+            take_while(0.., |c: char| c.is_ascii_digit()).map(|s| (10, s)),
+        )),
+        opt(one_of('L')),
+    )
+        .try_map(|(sign, (base, digits), _)| match sign {
             Some(_) => T::from_str_radix(&format!("-{digits}"), base),
             None => T::from_str_radix(digits, base),
-        },
-    )
+        })
 }

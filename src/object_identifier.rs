@@ -4,15 +4,13 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nom::{
-    Parser,
-    bytes::complete::take_while,
-    character::complete::char,
-    combinator::{map, opt},
-    error::Error,
-    sequence::{delimited, preceded},
-};
 use serde::{Deserialize, Serialize};
+use winnow::{
+    ModalParser, Parser,
+    combinator::{delimited, opt, preceded},
+    error::InputError,
+    token::{one_of, take_while},
+};
 
 use crate::signature::{parse_type_parameters, type_signature::TypeSignature};
 
@@ -78,21 +76,19 @@ impl ObjectIdentifier<'_> {
 }
 
 pub fn parse_object_identifier<'a>()
--> impl Parser<&'a str, Output = ObjectIdentifier<'a>, Error = Error<&'a str>> {
-    map(
-        delimited(
-            char('L'),
-            (
-                take_while(|x| (x != ';') && (x != '<')),
-                opt(parse_type_parameters()),
-                opt(preceded(char('.'), take_while(|x| x != ';'))),
-            ),
-            char(';'),
+-> impl ModalParser<&'a str, ObjectIdentifier<'a>, InputError<&'a str>> {
+    delimited(
+        one_of('L'),
+        (
+            take_while(0.., |x| (x != ';') && (x != '<')),
+            opt(parse_type_parameters()),
+            opt(preceded(one_of('.'), take_while(0.., |x| x != ';'))),
         ),
-        |(name, type_arguments, suf)| ObjectIdentifier {
-            class_name: Cow::Borrowed(name),
-            type_arguments,
-            suffix: suf.map(Cow::Borrowed),
-        },
+        one_of(';'),
     )
+    .map(|(name, type_arguments, suf)| ObjectIdentifier {
+        class_name: Cow::Borrowed(name),
+        type_arguments,
+        suffix: suf.map(Cow::Borrowed),
+    })
 }

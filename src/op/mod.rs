@@ -1,14 +1,10 @@
 use std::{borrow::Cow, fmt};
 
-use nom::{
-    Parser,
-    branch::alt,
-    bytes::complete::{tag, take_while1},
-    character::complete::char,
-    combinator::{map, opt},
-    error::Error,
-    multi::{many0, many1},
-    sequence::{delimited, preceded, terminated},
+use winnow::{
+    ModalParser, Parser,
+    combinator::{alt, delimited, opt, preceded, repeat, terminated},
+    error::InputError,
+    token::{literal, one_of, take_while},
 };
 
 use crate::{
@@ -30,14 +26,12 @@ impl fmt::Display for Label<'_> {
 }
 
 /// Parse a label in smali syntax, e.g. ":cond_0"
-pub fn parse_label<'a>() -> impl Parser<&'a str, Output = Label<'a>, Error = Error<&'a str>> {
-    map(
-        preceded(
-            char(':'),
-            take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '$'),
-        ),
-        |s| Label(Cow::Borrowed(s)),
+pub fn parse_label<'a>() -> impl ModalParser<&'a str, Label<'a>, InputError<&'a str>> {
+    preceded(
+        one_of(':'),
+        take_while(1.., |c: char| c.is_alphanumeric() || c == '_' || c == '$'),
     )
+    .map(|s| Label(Cow::Borrowed(s)))
 }
 
 /// Represents a protected range in a try/catch directive.
@@ -47,16 +41,16 @@ pub struct TryRange<'a> {
     pub end: Label<'a>,
 }
 
-pub fn parse_try_range<'a>() -> impl Parser<&'a str, Output = TryRange<'a>, Error = Error<&'a str>>
-{
-    map(
-        delimited(
-            ws(char('{')),
-            (terminated(ws(parse_label()), tag("..")), ws(parse_label())),
-            ws(char('}')),
+pub fn parse_try_range<'a>() -> impl ModalParser<&'a str, TryRange<'a>, InputError<&'a str>> {
+    delimited(
+        ws(one_of('{')),
+        (
+            terminated(ws(parse_label()), literal("..")),
+            ws(parse_label()),
         ),
-        |(start, end)| TryRange { start, end },
+        ws(one_of('}')),
     )
+    .map(|(start, end)| TryRange { start, end })
 }
 
 impl fmt::Display for TryRange<'_> {
@@ -83,27 +77,26 @@ pub enum CatchDirective<'a> {
 }
 
 pub fn parse_catch_directive<'a>()
--> impl Parser<&'a str, Output = CatchDirective<'a>, Error = Error<&'a str>> {
+-> impl ModalParser<&'a str, CatchDirective<'a>, InputError<&'a str>> {
     alt((
-        map(
-            preceded(
-                tag(".catch"),
-                (
-                    ws(parse_object_identifier()),
-                    ws(parse_try_range()),
-                    ws(parse_label()),
-                ),
+        preceded(
+            literal(".catch"),
+            (
+                ws(parse_object_identifier()),
+                ws(parse_try_range()),
+                ws(parse_label()),
             ),
-            |(exception, try_range, handler)| CatchDirective::Catch {
-                exception,
-                try_range,
-                handler,
-            },
-        ),
-        map(
-            preceded(tag(".catchall"), (ws(parse_try_range()), ws(parse_label()))),
-            |(try_range, handler)| CatchDirective::CatchAll { try_range, handler },
-        ),
+        )
+        .map(|(exception, try_range, handler)| CatchDirective::Catch {
+            exception,
+            try_range,
+            handler,
+        }),
+        preceded(
+            literal(".catchall"),
+            (ws(parse_try_range()), ws(parse_label())),
+        )
+        .map(|(try_range, handler)| CatchDirective::CatchAll { try_range, handler }),
     ))
 }
 
@@ -159,20 +152,29 @@ pub struct ArrayDataDirective {
 }
 
 pub fn parse_array_data_directive<'a>()
--> impl Parser<&'a str, Output = ArrayDataDirective, Error = Error<&'a str>> {
-    map(
-        delimited(
-            ws(tag(".array-data")),
-            (
-                ws(parse_int_lit::<u32>()),
-                many0(ws((
+-> impl ModalParser<&'a str, ArrayDataDirective, InputError<&'a str>> {
+    delimited(
+        ws(literal(".array-data")),
+        (
+            ws(parse_int_lit::<u32>()),
+            repeat(
+                0..,
+                ws((
                     parse_int_lit::<i64>(),
-                    opt(alt((char('t'), char('s'), char('l'), char('f'), char('d')))),
-                ))),
+                    opt(alt((
+                        one_of('t'),
+                        one_of('s'),
+                        one_of('l'),
+                        one_of('f'),
+                        one_of('d'),
+                    ))),
+                )),
             ),
-            ws(tag(".end array-data")),
         ),
-        |(width, e)| ArrayDataDirective {
+        ws(literal(".end array-data")),
+    )
+    .map(
+        |(width, e): (u32, Vec<(i64, Option<char>)>)| ArrayDataDirective {
             width,
             elements: e
                 .into_iter()
@@ -224,15 +226,13 @@ pub struct PackedSwitchDirective<'a> {
 }
 
 pub fn parse_packed_switch_directive<'a>()
--> impl Parser<&'a str, Output = PackedSwitchDirective<'a>, Error = Error<&'a str>> {
-    map(
-        delimited(
-            ws(tag(".packed-switch")),
-            (ws(parse_int_lit::<i32>()), many1(ws(parse_label()))),
-            ws(tag(".end packed-switch")),
-        ),
-        |(first_key, targets)| PackedSwitchDirective { first_key, targets },
+-> impl ModalParser<&'a str, PackedSwitchDirective<'a>, InputError<&'a str>> {
+    delimited(
+        ws(literal(".packed-switch")),
+        (ws(parse_int_lit::<i32>()), repeat(0.., ws(parse_label()))),
+        ws(literal(".end packed-switch")),
     )
+    .map(|(first_key, targets)| PackedSwitchDirective { first_key, targets })
 }
 
 impl fmt::Display for PackedSwitchDirective<'_> {
@@ -256,14 +256,12 @@ pub struct SparseSwitchEntry<'a> {
 }
 
 pub fn parse_sparse_switch_entry<'a>()
--> impl Parser<&'a str, Output = SparseSwitchEntry<'a>, Error = Error<&'a str>> {
-    map(
-        (
-            terminated(ws(parse_int_lit::<i32>()), tag("->")),
-            ws(parse_label()),
-        ),
-        |(key, target)| SparseSwitchEntry { key, target },
+-> impl ModalParser<&'a str, SparseSwitchEntry<'a>, InputError<&'a str>> {
+    (
+        terminated(ws(parse_int_lit::<i32>()), literal("->")),
+        ws(parse_label()),
     )
+        .map(|(key, target)| SparseSwitchEntry { key, target })
 }
 
 impl fmt::Display for SparseSwitchEntry<'_> {
@@ -280,15 +278,13 @@ pub struct SparseSwitchDirective<'a> {
 }
 
 pub fn parse_sparse_switch_directive<'a>()
--> impl Parser<&'a str, Output = SparseSwitchDirective<'a>, Error = Error<&'a str>> {
-    map(
-        delimited(
-            ws(tag(".sparse-switch")),
-            many0(parse_sparse_switch_entry()),
-            ws(tag(".end sparse-switch")),
-        ),
-        |entries| SparseSwitchDirective { entries },
+-> impl ModalParser<&'a str, SparseSwitchDirective<'a>, InputError<&'a str>> {
+    delimited(
+        ws(literal(".sparse-switch")),
+        repeat(0.., parse_sparse_switch_entry()),
+        ws(literal(".end sparse-switch")),
     )
+    .map(|entries| SparseSwitchDirective { entries })
 }
 
 impl fmt::Display for SparseSwitchDirective<'_> {
@@ -317,18 +313,15 @@ pub enum Op<'a> {
     SparseSwitch(SparseSwitchDirective<'a>),
 }
 
-pub fn parse_op<'a>() -> impl Parser<&'a str, Output = Op<'a>, Error = Error<&'a str>> {
+pub fn parse_op<'a>() -> impl ModalParser<&'a str, Op<'a>, InputError<&'a str>> {
     alt((
-        map(ws(parse_label()), Op::Label),
-        map(
-            preceded(ws(tag(".line")), ws(parse_int_lit::<u32>())),
-            Op::Line,
-        ),
-        map(ws(parse_dex_op), Op::Op),
-        map(parse_catch_directive(), Op::Catch),
-        map(parse_array_data_directive(), Op::ArrayData),
-        map(parse_packed_switch_directive(), Op::PackedSwitch),
-        map(parse_sparse_switch_directive(), Op::SparseSwitch),
+        ws(parse_label().map(Op::Label)),
+        preceded(ws(literal(".line")), ws(parse_int_lit::<u32>())).map(Op::Line),
+        ws(parse_dex_op).map(Op::Op),
+        parse_catch_directive().map(Op::Catch),
+        parse_array_data_directive().map(Op::ArrayData),
+        parse_packed_switch_directive().map(Op::PackedSwitch),
+        parse_sparse_switch_directive().map(Op::SparseSwitch),
     ))
 }
 
@@ -337,25 +330,25 @@ mod tests {
     #[test]
     fn test_array_data() {
         use super::*;
-        use nom::Parser;
-        let input = r#".array-data 4
+        use winnow::Parser;
+        let mut input = r#".array-data 4
                                 0x0
                                 0x3f800000
                              .end array-data"#;
-        let ad = parse_array_data_directive().parse_complete(input).unwrap();
+        let ad = parse_array_data_directive().parse_next(&mut input).unwrap();
         println!("{ad:?}");
     }
 
     #[test]
     fn test1() {
         use super::*;
-        use nom::Parser;
-        let input = "\n    invoke-direct {p0}, Ljava/lang/Object;-><init>()V\n\n";
-        let (_, a) = parse_op().parse(input).unwrap();
+        use winnow::Parser;
+        let mut input = "\n    invoke-direct {p0}, Ljava/lang/Object;-><init>()V\n\n";
+        let a = parse_op().parse_next(&mut input).unwrap();
         println!("{a:?}");
 
-        let input = "\n    :goto_0\n\n";
-        let (_, a) = parse_op().parse(input).unwrap();
+        let mut input = "\n    :goto_0\n\n";
+        let a = parse_op().parse_next(&mut input).unwrap();
         println!("{a:?}");
     }
 }

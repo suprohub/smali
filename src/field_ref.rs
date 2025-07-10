@@ -1,5 +1,5 @@
-use nom::{Parser, bytes::complete::tag, combinator::map, error::Error, sequence::terminated};
 use std::fmt;
+use winnow::{ModalParser, Parser, combinator::terminated, error::InputError, token::literal};
 
 use crate::{
     object_identifier::{ObjectIdentifier, parse_object_identifier},
@@ -27,13 +27,10 @@ impl fmt::Display for FieldRef<'_> {
     }
 }
 
-pub fn parse_field_ref<'a>() -> impl Parser<&'a str, Output = FieldRef<'a>, Error = Error<&'a str>>
-{
-    map(
-        (
-            terminated(parse_object_identifier(), tag("->")),
-            parse_type_parameter(),
-        ),
-        |(class, param)| FieldRef { class, param },
+pub fn parse_field_ref<'a>() -> impl ModalParser<&'a str, FieldRef<'a>, InputError<&'a str>> {
+    (
+        terminated(parse_object_identifier(), literal("->")),
+        parse_type_parameter(),
     )
+        .map(|(class, param)| FieldRef { class, param })
 }
