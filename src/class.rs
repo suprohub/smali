@@ -134,7 +134,7 @@ impl<'a> Class<'a> {
     }
 }
 
-pub(crate) fn write_class(dex: &Class) -> String {
+pub fn write_class(dex: &Class) -> String {
     let mut out = format!(
         ".class {}{}\n",
         write_modifiers(&dex.modifiers),

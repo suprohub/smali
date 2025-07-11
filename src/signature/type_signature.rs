@@ -140,8 +140,8 @@ pub fn parse_type_parameter<'a>()
 }
 
 // Its needed to be recursive, sadly ;(
-pub(crate) fn parse_typesignature<'a>()
--> impl ModalParser<&'a str, TypeSignature<'a>, InputError<&'a str>> {
+pub fn parse_typesignature<'a>() -> impl ModalParser<&'a str, TypeSignature<'a>, InputError<&'a str>>
+{
     ws(alt((
         alt((
             one_of('Z').value(TypeSignature::Bool),

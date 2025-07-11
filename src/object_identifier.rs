@@ -29,9 +29,9 @@ use crate::signature::{parse_type_parameters, type_signature::TypeSignature};
 /// ```
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct ObjectIdentifier<'a> {
-    pub(crate) class_name: Cow<'a, str>,
-    pub(crate) type_arguments: Option<Vec<TypeSignature<'a>>>,
-    pub(crate) suffix: Option<Cow<'a, str>>,
+    pub class_name: Cow<'a, str>,
+    pub type_arguments: Option<Vec<TypeSignature<'a>>>,
+    pub suffix: Option<Cow<'a, str>>,
 }
 
 impl Hash for ObjectIdentifier<'_> {

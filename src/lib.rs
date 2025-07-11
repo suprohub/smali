@@ -81,7 +81,7 @@ pub fn parse_string_lit<'a>() -> impl ModalParser<&'a str, &'a str, InputError<&
     )
 }
 
-pub(crate) fn parse_int_lit<'a, T>() -> impl ModalParser<&'a str, T, InputError<&'a str>>
+pub fn parse_int_lit<'a, T>() -> impl ModalParser<&'a str, T, InputError<&'a str>>
 where
     T: num_traits::Num + std::str::FromStr + TryFrom<i64>,
     <T as TryFrom<i64>>::Error: Debug,

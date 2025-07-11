@@ -25,7 +25,7 @@ use crate::signature::{
 /// ```
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct MethodSignature<'a> {
-    pub(crate) type_parameters: Option<Vec<TypeSignature<'a>>>,
+    pub type_parameters: Option<Vec<TypeSignature<'a>>>,
     pub args: Vec<TypeSignature<'a>>,
     pub result: TypeSignature<'a>,
     pub throws: Option<TypeSignature<'a>>,
@@ -80,7 +80,7 @@ fn parse_arguments<'a>() -> impl ModalParser<&'a str, Vec<TypeSignature<'a>>, In
     delimited(one_of('('), repeat(0.., parse_typesignature()), one_of(')'))
 }
 
-pub(crate) fn parse_methodsignature<'a>()
+pub fn parse_methodsignature<'a>()
 -> impl ModalParser<&'a str, MethodSignature<'a>, InputError<&'a str>> {
     (
         opt(parse_type_parameters()),
