@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum TypeSignature<'a> {
     Array(Box<TypeSignature<'a>>),
-    Object(ObjectIdentifier<'a>),
+    Object(Box<ObjectIdentifier<'a>>),
     Int,
     Bool,
     Byte,
@@ -161,7 +161,7 @@ pub fn parse_typesignature<'a>() -> impl ModalParser<&'a str, TypeSignature<'a>,
             parse_typesignature().parse_next(input)
         })
             .map(|(ts, ts_rest)| TypeSignature::TypeParameters(ts, Box::new(ts_rest))),
-        parse_object_identifier().map(TypeSignature::Object),
+        parse_object_identifier().map(|o| TypeSignature::Object(Box::new(o))),
         delimited(one_of('T'), take_while(0.., |x| x != ';'), one_of(';'))
             .map(|name: &str| TypeSignature::TypeVariableSignature(Cow::Borrowed(name))),
         preceded(one_of('['), |input: &mut &'a str| {

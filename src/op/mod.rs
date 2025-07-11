@@ -27,11 +27,11 @@ impl fmt::Display for Label<'_> {
 
 /// Parse a label in smali syntax, e.g. ":cond_0"
 pub fn parse_label<'a>() -> impl ModalParser<&'a str, Label<'a>, InputError<&'a str>> {
-    preceded(
+    ws(preceded(
         one_of(':'),
         take_while(1.., |c: char| c.is_alphanumeric() || c == '_' || c == '$'),
     )
-    .map(|s| Label(Cow::Borrowed(s)))
+    .map(|s| Label(Cow::Borrowed(s))))
 }
 
 /// Represents a protected range in a try/catch directive.
@@ -44,10 +44,7 @@ pub struct TryRange<'a> {
 pub fn parse_try_range<'a>() -> impl ModalParser<&'a str, TryRange<'a>, InputError<&'a str>> {
     delimited(
         ws(one_of('{')),
-        (
-            terminated(ws(parse_label()), literal("..")),
-            ws(parse_label()),
-        ),
+        (terminated(parse_label(), literal("..")), parse_label()),
         ws(one_of('}')),
     )
     .map(|(start, end)| TryRange { start, end })
@@ -84,7 +81,7 @@ pub fn parse_catch_directive<'a>()
             (
                 ws(parse_object_identifier()),
                 ws(parse_try_range()),
-                ws(parse_label()),
+                parse_label(),
             ),
         )
         .map(|(exception, try_range, handler)| CatchDirective::Catch {
@@ -92,11 +89,8 @@ pub fn parse_catch_directive<'a>()
             try_range,
             handler,
         }),
-        preceded(
-            literal(".catchall"),
-            (ws(parse_try_range()), ws(parse_label())),
-        )
-        .map(|(try_range, handler)| CatchDirective::CatchAll { try_range, handler }),
+        preceded(literal(".catchall"), (ws(parse_try_range()), parse_label()))
+            .map(|(try_range, handler)| CatchDirective::CatchAll { try_range, handler }),
     ))
 }
 
@@ -229,7 +223,7 @@ pub fn parse_packed_switch_directive<'a>()
 -> impl ModalParser<&'a str, PackedSwitchDirective<'a>, InputError<&'a str>> {
     delimited(
         ws(literal(".packed-switch")),
-        (ws(parse_int_lit::<i32>()), repeat(0.., ws(parse_label()))),
+        (ws(parse_int_lit::<i32>()), repeat(0.., parse_label())),
         ws(literal(".end packed-switch")),
     )
     .map(|(first_key, targets)| PackedSwitchDirective { first_key, targets })
@@ -259,7 +253,7 @@ pub fn parse_sparse_switch_entry<'a>()
 -> impl ModalParser<&'a str, SparseSwitchEntry<'a>, InputError<&'a str>> {
     (
         terminated(ws(parse_int_lit::<i32>()), literal("->")),
-        ws(parse_label()),
+        parse_label(),
     )
         .map(|(key, target)| SparseSwitchEntry { key, target })
 }

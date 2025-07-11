@@ -116,169 +116,307 @@ mod tests {
     fn test_method() {
         use super::*;
         use winnow::Parser;
-        let mut smali = r#".method public r(Ljava/lang/Throwable;Z)V
-    .locals 5
+        let mut smali = r#".method private final verifyClientState()V
+    .locals 4
 
-    iget-object v0, p0, Laqg;->c:Ljava/lang/Object;
+    .line 248
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->interceptors:Ljava/util/List;
 
-    check-cast v0, Landroid/widget/Toast;
+    const/4 v1, 0x0
 
-    if-eqz v0, :cond_0
+    invoke-interface {v0, v1}, Ljava/util/List;->contains(Ljava/lang/Object;)Z
 
-    invoke-virtual {v0}, Landroid/widget/Toast;->cancel()V
-
-    :cond_0
-    iget-object v0, p0, Laqg;->b:Ljava/lang/Object;
-
-    check-cast v0, Lru/ok/messages/views/fragments/base/FrgBase;
-
-    invoke-virtual {v0}, Landroidx/fragment/app/a;->O1()Landroid/content/Context;
-
-    move-result-object v1
-
-    if-nez v1, :cond_1
-
-    return-void
-
-    :cond_1
-    instance-of v2, p1, Lru/ok/tamtam/stickersets/favorite/FavoriteStickerSetController$MaxFavoriteStickerSetsException;
-
-    const/4 v3, 0x0
-
-    if-eqz v2, :cond_2
+    move-result v0
 
     const/4 v2, 0x1
 
+    xor-int/2addr v0, v2
+
+    if-eqz v0, :cond_f
+
+    .line 251
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->networkInterceptors:Ljava/util/List;
+
+    invoke-interface {v0, v1}, Ljava/util/List;->contains(Ljava/lang/Object;)Z
+
+    move-result v0
+
+    xor-int/2addr v0, v2
+
+    if-eqz v0, :cond_e
+
+    .line 255
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->connectionSpecs:Ljava/util/List;
+
+    check-cast v0, Ljava/lang/Iterable;
+
+    .line 1083
+    instance-of v1, v0, Ljava/util/Collection;
+
+    const/4 v3, 0x0
+
+    if-eqz v1, :cond_1
+
+    move-object v1, v0
+
+    check-cast v1, Ljava/util/Collection;
+
+    invoke-interface {v1}, Ljava/util/Collection;->isEmpty()Z
+
+    move-result v1
+
+    if-eqz v1, :cond_1
+
+    :cond_0
+    move v0, v2
+
     goto :goto_0
+
+    .line 1084
+    :cond_1
+    invoke-interface {v0}, Ljava/lang/Iterable;->iterator()Ljava/util/Iterator;
+
+    move-result-object v0
 
     :cond_2
-    instance-of v2, p1, Lru/ok/tamtam/errors/TamErrorException;
+    invoke-interface {v0}, Ljava/util/Iterator;->hasNext()Z
 
-    if-nez v2, :cond_3
+    move-result v1
 
-    move v2, v3
+    if-eqz v1, :cond_0
 
-    goto :goto_0
+    invoke-interface {v0}, Ljava/util/Iterator;->next()Ljava/lang/Object;
 
-    :cond_3
-    move-object v2, p1
+    move-result-object v1
 
-    check-cast v2, Lru/ok/tamtam/errors/TamErrorException;
+    check-cast v1, Lokhttp3/ConnectionSpec;
 
-    iget-object v2, v2, Lru/ok/tamtam/errors/TamErrorException;->a:Lqaf;
+    .line 255
+    invoke-virtual {v1}, Lokhttp3/ConnectionSpec;->isTls()Z
 
-    iget-object v2, v2, Lqaf;->b:Ljava/lang/String;
+    move-result v1
 
-    const-string v4, "favorite.stickersets.limit"
+    if-eqz v1, :cond_2
 
-    invoke-virtual {v4, v2}, Ljava/lang/Object;->equals(Ljava/lang/Object;)Z
-
-    move-result v2
+    move v0, v3
 
     :goto_0
-    if-eqz v2, :cond_4
+    if-eqz v0, :cond_a
 
-    sget p1, Lpad;->g:I
+    .line 256
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->sslSocketFactoryOrNull:Ljavax/net/ssl/SSLSocketFactory;
 
-    iget-object p0, p0, Laqg;->a:Ljava/lang/Object;
+    if-nez v0, :cond_3
 
-    check-cast p0, Lbud;
-
-    check-cast p0, Lakd;
-
-    invoke-virtual {p0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
-
-    sget-object p2, Lru/ok/tamtam/android/prefs/PmsKey;->max-favorite-sticker-sets:Lru/ok/tamtam/android/prefs/PmsKey;
-
-    const/16 v2, 0x64
-
-    int-to-long v2, v2
-
-    invoke-virtual {p0, p2, v2, v3}, Lakd;->r(Ljava/lang/Enum;J)J
-
-    move-result-wide v2
-
-    long-to-int p0, v2
-
-    invoke-static {p1, p0, v1}, Lghf;->s(IILandroid/content/Context;)Ljava/lang/String;
-
-    move-result-object p0
-
-    new-instance p1, Lru/ok/messages/views/dialogs/FrgDlgFavoriteStickersLimit;
-
-    invoke-direct {p1}, Lru/ok/messages/views/dialogs/FrgDlgFavoriteStickersLimit;-><init>()V
-
-    new-instance p2, Landroid/os/Bundle;
-
-    invoke-direct {p2}, Landroid/os/Bundle;-><init>()V
-
-    const-string v1, "ru.ok.tamtam.extra.TEXT"
-
-    invoke-virtual {p2, v1, p0}, Landroid/os/BaseBundle;->putString(Ljava/lang/String;Ljava/lang/String;)V
-
-    invoke-virtual {p1, p2}, Landroidx/fragment/app/a;->L2(Landroid/os/Bundle;)V
-
-    invoke-virtual {p1, v0}, Lru/ok/messages/views/dialogs/FrgDlgChecked;->d3(Landroidx/fragment/app/a;)V
-
-    goto :goto_3
-
-    :cond_4
-    instance-of v2, p1, Lru/ok/tamtam/errors/TamErrorException;
-
-    if-eqz v2, :cond_5
-
-    check-cast p1, Lru/ok/tamtam/errors/TamErrorException;
-
-    iget-object p1, p1, Lru/ok/tamtam/errors/TamErrorException;->a:Lqaf;
-
-    invoke-static {v1, p1}, Lfhf;->c(Landroid/content/Context;Lqaf;)Ljava/lang/String;
-
-    move-result-object p1
+    move v0, v2
 
     goto :goto_1
 
-    :cond_5
-    const/4 p1, 0x0
+    :cond_3
+    move v0, v3
 
     :goto_1
-    invoke-static {p1}, Lcvg;->A(Ljava/lang/CharSequence;)Z
+    const-string v1, "Check failed."
 
-    move-result v2
+    if-eqz v0, :cond_9
 
-    if-eqz v2, :cond_7
+    .line 257
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->certificateChainCleaner:Lokhttp3/internal/tls/CertificateChainCleaner;
 
-    if-eqz p2, :cond_6
+    if-nez v0, :cond_4
 
-    sget p1, Lqad;->J9:I
-
-    invoke-virtual {v0, p1}, Landroidx/fragment/app/a;->S1(I)Ljava/lang/String;
-
-    move-result-object p1
+    move v0, v2
 
     goto :goto_2
 
-    :cond_6
-    sget p1, Lqad;->L9:I
+    :cond_4
+    move v0, v3
 
-    invoke-virtual {v0, p1}, Landroidx/fragment/app/a;->S1(I)Ljava/lang/String;
-
-    move-result-object p1
-
-    :cond_7
     :goto_2
-    invoke-static {v1, p1, v3}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;
+    if-eqz v0, :cond_8
 
-    move-result-object p1
+    .line 258
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->x509TrustManager:Ljavax/net/ssl/X509TrustManager;
 
-    iput-object p1, p0, Laqg;->c:Ljava/lang/Object;
+    if-nez v0, :cond_5
 
-    invoke-virtual {p1}, Landroid/widget/Toast;->show()V
+    goto :goto_3
+
+    :cond_5
+    move v2, v3
 
     :goto_3
+    if-eqz v2, :cond_7
+
+    .line 259
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->certificatePinner:Lokhttp3/CertificatePinner;
+
+    sget-object v2, Lokhttp3/CertificatePinner;->DEFAULT:Lokhttp3/CertificatePinner;
+
+    invoke-static {v0, v2}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_6
+
+    goto :goto_4
+
+    :cond_6
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 258
+    :cond_7
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 257
+    :cond_8
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 256
+    :cond_9
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 261
+    :cond_a
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->sslSocketFactoryOrNull:Ljavax/net/ssl/SSLSocketFactory;
+
+    if-eqz v0, :cond_d
+
+    .line 262
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->certificateChainCleaner:Lokhttp3/internal/tls/CertificateChainCleaner;
+
+    if-eqz v0, :cond_c
+
+    .line 263
+    iget-object v0, p0, Lokhttp3/OkHttpClient;->x509TrustManager:Ljavax/net/ssl/X509TrustManager;
+
+    if-eqz v0, :cond_b
+
+    :goto_4
     return-void
+
+    :cond_b
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    const-string v1, "x509TrustManager == null"
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 262
+    :cond_c
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    const-string v1, "certificateChainCleaner == null"
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 261
+    :cond_d
+    new-instance v0, Ljava/lang/IllegalStateException;
+
+    const-string v1, "sslSocketFactory == null"
+
+    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    .line 252
+    :cond_e
+    invoke-virtual {p0}, Lokhttp3/OkHttpClient;->networkInterceptors()Ljava/util/List;
+
+    move-result-object v0
+
+    const-string v1, "Null network interceptor: "
+
+    invoke-static {v1, v0}, Lkotlin/jvm/internal/Intrinsics;->stringPlus(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+
+    move-result-object v0
+
+    .line 251
+    new-instance v1, Ljava/lang/IllegalStateException;
+
+    invoke-virtual {v0}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v0
+
+    invoke-direct {v1, v0}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v1
+
+    .line 249
+    :cond_f
+    invoke-virtual {p0}, Lokhttp3/OkHttpClient;->interceptors()Ljava/util/List;
+
+    move-result-object v0
+
+    const-string v1, "Null interceptor: "
+
+    invoke-static {v1, v0}, Lkotlin/jvm/internal/Intrinsics;->stringPlus(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+
+    move-result-object v0
+
+    .line 248
+    new-instance v1, Ljava/lang/IllegalStateException;
+
+    invoke-virtual {v0}, Ljava/lang/Object;->toString()Ljava/lang/String;
+
+    move-result-object v0
+
+    invoke-direct {v1, v0}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+
+    throw v1
 .end method"#;
 
-        let _ = parse_method().parse_next(&mut smali).unwrap();
+        let m = parse_method().parse_next(&mut smali).unwrap();
+        println!("{}", write_method(&m))
     }
 
     #[test]

@@ -5,13 +5,14 @@
 use std::{
     borrow::Cow,
     fmt::{self, Debug},
+    str::FromStr,
 };
 
 use winnow::{
     ModalParser, ModalResult, Parser,
-    ascii::{alphanumeric1, digit1, space0, space1},
-    combinator::{alt, delimited, preceded, separated},
-    error::InputError,
+    ascii::{alphanumeric1, digit1, space1},
+    combinator::{alt, delimited, preceded, separated, terminated},
+    error::{ErrMode, InputError},
     token::{literal, one_of, take_while},
 };
 
@@ -24,7 +25,7 @@ use crate::{
     ws,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Register {
     Parameter(u16),
     Local(u16),
@@ -55,6 +56,912 @@ impl fmt::Display for RegisterRange {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InvokeType {
+    Virtual,
+    Super,
+    Interface,
+    Direct,
+    Static,
+    VirtualRange,
+    SuperRange,
+    DirectRange,
+    StaticRange,
+    InterfaceRange,
+    Polymorphic,
+    PolymorphicRange,
+    Custom,
+    CustomRange,
+}
+
+impl InvokeType {
+    pub fn is_range(&self) -> bool {
+        matches!(
+            self,
+            Self::VirtualRange
+                | Self::SuperRange
+                | Self::DirectRange
+                | Self::StaticRange
+                | Self::PolymorphicRange
+                | Self::CustomRange
+        )
+    }
+}
+
+impl FromStr for InvokeType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "invoke-virtual" => Ok(InvokeType::Virtual),
+            "invoke-super" => Ok(InvokeType::Super),
+            "invoke-interface" => Ok(InvokeType::Interface),
+            "invoke-direct" => Ok(InvokeType::Direct),
+            "invoke-static" => Ok(InvokeType::Static),
+            "invoke-virtual/range" => Ok(InvokeType::VirtualRange),
+            "invoke-super/range" => Ok(InvokeType::SuperRange),
+            "invoke-direct/range" => Ok(InvokeType::DirectRange),
+            "invoke-static/range" => Ok(InvokeType::StaticRange),
+            "invoke-interface/range" => Ok(InvokeType::InterfaceRange),
+            "invoke-polymorphic" => Ok(InvokeType::Polymorphic),
+            "invoke-polymorphic/range" => Ok(InvokeType::PolymorphicRange),
+            "invoke-custom" => Ok(InvokeType::Custom),
+            "invoke-custom/range" => Ok(InvokeType::CustomRange),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for InvokeType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            InvokeType::Virtual => write!(f, "invoke-virtual"),
+            InvokeType::Super => write!(f, "invoke-super"),
+            InvokeType::Interface => write!(f, "invoke-interface"),
+            InvokeType::Direct => write!(f, "invoke-direct"),
+            InvokeType::Static => write!(f, "invoke-static"),
+            InvokeType::VirtualRange => write!(f, "invoke-virtual/range"),
+            InvokeType::SuperRange => write!(f, "invoke-super/range"),
+            InvokeType::DirectRange => write!(f, "invoke-direct/range"),
+            InvokeType::StaticRange => write!(f, "invoke-static/range"),
+            InvokeType::InterfaceRange => write!(f, "invoke-interface/range"),
+            InvokeType::Polymorphic => write!(f, "invoke-polymorphic"),
+            InvokeType::PolymorphicRange => write!(f, "invoke-polymorphic/range"),
+            InvokeType::Custom => write!(f, "invoke-custom"),
+            InvokeType::CustomRange => write!(f, "invoke-custom/range"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConstType {
+    String,
+    StringJumbo,
+    Class,
+    MethodHandle,
+    MethodType,
+}
+
+impl FromStr for ConstType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "const-string" => Ok(ConstType::String),
+            "const-string/jumbo" => Ok(ConstType::StringJumbo),
+            "const-class" => Ok(ConstType::Class),
+            "const-method-handle" => Ok(ConstType::MethodHandle),
+            "const-method-type" => Ok(ConstType::MethodType),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ConstType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConstType::String => write!(f, "const-string"),
+            ConstType::StringJumbo => write!(f, "const-string/jumbo"),
+            ConstType::Class => write!(f, "const-class"),
+            ConstType::MethodHandle => write!(f, "const-method-handle"),
+            ConstType::MethodType => write!(f, "const-method-type"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TwoRegMoveType {
+    Normal,
+    From16,
+    Wide,
+    WideFrom16,
+    Wide16,
+    Object,
+    ObjectFrom16,
+    Object16,
+}
+
+impl FromStr for TwoRegMoveType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "move" => Ok(TwoRegMoveType::Normal),
+            "move/from16" => Ok(TwoRegMoveType::From16),
+            "move-wide" => Ok(TwoRegMoveType::Wide),
+            "move-wide/from16" => Ok(TwoRegMoveType::WideFrom16),
+            "move-wide/16" => Ok(TwoRegMoveType::Wide16),
+            "move-object" => Ok(TwoRegMoveType::Object),
+            "move-object/from16" => Ok(TwoRegMoveType::ObjectFrom16),
+            "move-object/16" => Ok(TwoRegMoveType::Object16),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for TwoRegMoveType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TwoRegMoveType::Normal => write!(f, "move"),
+            TwoRegMoveType::From16 => write!(f, "move/from16"),
+            TwoRegMoveType::Wide => write!(f, "move-wide"),
+            TwoRegMoveType::WideFrom16 => write!(f, "move-wide/from16"),
+            TwoRegMoveType::Wide16 => write!(f, "move-wide/16"),
+            TwoRegMoveType::Object => write!(f, "move-object"),
+            TwoRegMoveType::ObjectFrom16 => write!(f, "move-object/from16"),
+            TwoRegMoveType::Object16 => write!(f, "move-object/16"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OneRegMoveType {
+    Result,
+    ResultWide,
+    ResultObject,
+    Exception,
+}
+
+impl FromStr for OneRegMoveType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "move-result" => Ok(OneRegMoveType::Result),
+            "move-result-wide" => Ok(OneRegMoveType::ResultWide),
+            "move-result-object" => Ok(OneRegMoveType::ResultObject),
+            "move-exception" => Ok(OneRegMoveType::Exception),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for OneRegMoveType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OneRegMoveType::Result => write!(f, "move-result"),
+            OneRegMoveType::ResultWide => write!(f, "move-result-wide"),
+            OneRegMoveType::ResultObject => write!(f, "move-result-object"),
+            OneRegMoveType::Exception => write!(f, "move-exception"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ReturnType {
+    Void,
+    Normal,
+    Wide,
+    Object,
+}
+
+impl FromStr for ReturnType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "return-void" => Ok(ReturnType::Void),
+            "return" => Ok(ReturnType::Normal),
+            "return-wide" => Ok(ReturnType::Wide),
+            "return-object" => Ok(ReturnType::Object),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ReturnType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReturnType::Void => write!(f, "return-void"),
+            ReturnType::Normal => write!(f, "return"),
+            ReturnType::Wide => write!(f, "return-wide"),
+            ReturnType::Object => write!(f, "return-object"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StaticFieldAccessType {
+    Get,
+    Put,
+}
+
+impl FromStr for StaticFieldAccessType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sget" => Ok(StaticFieldAccessType::Get),
+            "sput" => Ok(StaticFieldAccessType::Put),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for StaticFieldAccessType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            StaticFieldAccessType::Get => write!(f, "sget"),
+            StaticFieldAccessType::Put => write!(f, "sput"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DynamicFieldAccessType {
+    Get,
+    Put,
+}
+
+impl FromStr for DynamicFieldAccessType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "iget" => Ok(DynamicFieldAccessType::Get),
+            "iput" => Ok(DynamicFieldAccessType::Put),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for DynamicFieldAccessType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DynamicFieldAccessType::Get => write!(f, "iget"),
+            DynamicFieldAccessType::Put => write!(f, "iput"),
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FieldValueType {
+    Normal,
+    Wide,
+    Object,
+    Boolean,
+    Byte,
+    Char,
+    Short,
+}
+
+impl FromStr for FieldValueType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "" => Ok(FieldValueType::Normal),
+            "wide" => Ok(FieldValueType::Wide),
+            "object" => Ok(FieldValueType::Object),
+            "boolean" => Ok(FieldValueType::Boolean),
+            "byte" => Ok(FieldValueType::Byte),
+            "char" => Ok(FieldValueType::Char),
+            "short" => Ok(FieldValueType::Short),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for FieldValueType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FieldValueType::Normal => Ok(()),
+            FieldValueType::Wide => write!(f, "wide"),
+            FieldValueType::Object => write!(f, "object"),
+            FieldValueType::Boolean => write!(f, "boolean"),
+            FieldValueType::Byte => write!(f, "byte"),
+            FieldValueType::Char => write!(f, "char"),
+            FieldValueType::Short => write!(f, "short"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArithType {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    And,
+    Or,
+    Neg,
+    Not,
+    Xor,
+    Shl,
+    Shr,
+    Ushr,
+}
+
+impl FromStr for ArithType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "add" => Ok(ArithType::Add),
+            "sub" => Ok(ArithType::Sub),
+            "mul" => Ok(ArithType::Mul),
+            "div" => Ok(ArithType::Div),
+            "rem" => Ok(ArithType::Rem),
+            "and" => Ok(ArithType::And),
+            "or" => Ok(ArithType::Or),
+            "net" => Ok(ArithType::Or),
+            "not" => Ok(ArithType::Or),
+            "xor" => Ok(ArithType::Xor),
+            "shl" => Ok(ArithType::Shl),
+            "shr" => Ok(ArithType::Shr),
+            "ushr" => Ok(ArithType::Ushr),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ArithType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ArithType::Add => write!(f, "add"),
+            ArithType::Sub => write!(f, "sub"),
+            ArithType::Mul => write!(f, "mul"),
+            ArithType::Div => write!(f, "div"),
+            ArithType::Rem => write!(f, "rem"),
+            ArithType::And => write!(f, "and"),
+            ArithType::Or => write!(f, "or"),
+            ArithType::Not => write!(f, "not"),
+            ArithType::Neg => write!(f, "neg"),
+            ArithType::Xor => write!(f, "xor"),
+            ArithType::Shl => write!(f, "shl"),
+            ArithType::Shr => write!(f, "shr"),
+            ArithType::Ushr => write!(f, "ushr"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArithOperandType {
+    Int,
+    Long,
+    Float,
+    Double,
+}
+
+impl FromStr for ArithOperandType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "int" => Ok(ArithOperandType::Int),
+            "long" => Ok(ArithOperandType::Long),
+            "float" => Ok(ArithOperandType::Float),
+            "double" => Ok(ArithOperandType::Double),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ArithOperandType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ArithOperandType::Int => write!(f, "int"),
+            ArithOperandType::Long => write!(f, "long"),
+            ArithOperandType::Float => write!(f, "float"),
+            ArithOperandType::Double => write!(f, "double"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArithOperand2AddrType {
+    Int,
+    Long,
+    Float,
+    Double,
+}
+
+impl FromStr for ArithOperand2AddrType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "int/2addr" => Ok(ArithOperand2AddrType::Int),
+            "long/2addr" => Ok(ArithOperand2AddrType::Long),
+            "float/2addr" => Ok(ArithOperand2AddrType::Float),
+            "double/2addr" => Ok(ArithOperand2AddrType::Double),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ArithOperand2AddrType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ArithOperand2AddrType::Int => write!(f, "int/2addr"),
+            ArithOperand2AddrType::Long => write!(f, "long/2addr"),
+            ArithOperand2AddrType::Float => write!(f, "float/2addr"),
+            ArithOperand2AddrType::Double => write!(f, "double/2addr"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConditionType {
+    Eqz,
+    Nez,
+    Ltz,
+    Gez,
+    Gtz,
+    Lez,
+}
+
+impl FromStr for ConditionType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "if-eqz" => Ok(ConditionType::Eqz),
+            "if-nez" => Ok(ConditionType::Nez),
+            "if-ltz" => Ok(ConditionType::Ltz),
+            "if-gez" => Ok(ConditionType::Gez),
+            "if-gtz" => Ok(ConditionType::Gtz),
+            "if-lez" => Ok(ConditionType::Lez),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ConditionType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConditionType::Eqz => write!(f, "if-eqz"),
+            ConditionType::Nez => write!(f, "if-nez"),
+            ConditionType::Ltz => write!(f, "if-ltz"),
+            ConditionType::Gez => write!(f, "if-gez"),
+            ConditionType::Gtz => write!(f, "if-gtz"),
+            ConditionType::Lez => write!(f, "if-lez"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TwoRegConditionType {
+    Eq,
+    Ne,
+    Lt,
+    Ge,
+    Gt,
+    Le,
+}
+
+impl FromStr for TwoRegConditionType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "if-eq" => Ok(TwoRegConditionType::Eq),
+            "if-ne" => Ok(TwoRegConditionType::Ne),
+            "if-lt" => Ok(TwoRegConditionType::Lt),
+            "if-ge" => Ok(TwoRegConditionType::Ge),
+            "if-gt" => Ok(TwoRegConditionType::Gt),
+            "if-le" => Ok(TwoRegConditionType::Le),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for TwoRegConditionType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TwoRegConditionType::Eq => write!(f, "if-eq"),
+            TwoRegConditionType::Ne => write!(f, "if-ne"),
+            TwoRegConditionType::Lt => write!(f, "if-lt"),
+            TwoRegConditionType::Ge => write!(f, "if-ge"),
+            TwoRegConditionType::Gt => write!(f, "if-gt"),
+            TwoRegConditionType::Le => write!(f, "if-le"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GotoType {
+    Normal,
+    Size16,
+    Size32,
+}
+
+impl FromStr for GotoType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "goto" => Ok(GotoType::Normal),
+            "goto/16" => Ok(GotoType::Size16),
+            "goto/32" => Ok(GotoType::Size32),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for GotoType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GotoType::Normal => write!(f, "goto"),
+            GotoType::Size16 => write!(f, "goto/16"),
+            GotoType::Size32 => write!(f, "goto/32"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConstLiteralType {
+    Const4,
+    Const16,
+    Const,
+    ConstHigh16,
+    ConstWide16,
+    ConstWide32,
+    ConstWide,
+    ConstWideHigh16,
+}
+
+impl FromStr for ConstLiteralType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "const/4" => Ok(ConstLiteralType::Const4),
+            "const/16" => Ok(ConstLiteralType::Const16),
+            "const" => Ok(ConstLiteralType::Const),
+            "const/high16" => Ok(ConstLiteralType::ConstHigh16),
+            "const-wide/16" => Ok(ConstLiteralType::ConstWide16),
+            "const-wide/32" => Ok(ConstLiteralType::ConstWide32),
+            "const-wide" => Ok(ConstLiteralType::ConstWide),
+            "const-wide/high16" => Ok(ConstLiteralType::ConstWideHigh16),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ConstLiteralType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConstLiteralType::Const4 => write!(f, "const/4"),
+            ConstLiteralType::Const16 => write!(f, "const/16"),
+            ConstLiteralType::Const => write!(f, "const"),
+            ConstLiteralType::ConstHigh16 => write!(f, "const/high16"),
+            ConstLiteralType::ConstWide16 => write!(f, "const-wide/16"),
+            ConstLiteralType::ConstWide32 => write!(f, "const-wide/32"),
+            ConstLiteralType::ConstWide => write!(f, "const-wide"),
+            ConstLiteralType::ConstWideHigh16 => write!(f, "const-wide/high16"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConstLiteralValue {
+    Const4(i8),
+    Const16(i16),
+    Const(i32),
+    ConstHigh16(i64),
+    ConstWide16(i16),
+    ConstWide32(i32),
+    ConstWide(i64),
+    ConstWideHigh16(i64),
+}
+
+impl fmt::Display for ConstLiteralValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConstLiteralValue::Const4(v) => write!(f, "{v}"),
+            ConstLiteralValue::Const16(v) => write!(f, "{v}"),
+            ConstLiteralValue::Const(v) => write!(f, "{v}"),
+            ConstLiteralValue::ConstHigh16(v) => write!(f, "0x{:04x}0000", *v as u16),
+            ConstLiteralValue::ConstWide16(v) => write!(f, "{v}"),
+            ConstLiteralValue::ConstWide32(v) => write!(f, "{v}"),
+            ConstLiteralValue::ConstWide(v) => write!(f, "0x{v:x}L"),
+            ConstLiteralValue::ConstWideHigh16(v) => {
+                write!(f, "0x{:04x}000000000000", *v as u16)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LitArithType8 {
+    AddIntLit8,
+    RSubIntLit8,
+    MulIntLit8,
+    DivIntLit8,
+    RemIntLit8,
+    AndIntLit8,
+    OrIntLit8,
+    XorIntLit8,
+    ShlIntLit8,
+    ShrIntLit8,
+    UshrIntLit8,
+}
+
+impl FromStr for LitArithType8 {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "add-int/lit8" => Ok(LitArithType8::AddIntLit8),
+            "rsub-int/lit8" => Ok(LitArithType8::RSubIntLit8),
+            "mul-int/lit8" => Ok(LitArithType8::MulIntLit8),
+            "div-int/lit8" => Ok(LitArithType8::DivIntLit8),
+            "rem-int/lit8" => Ok(LitArithType8::RemIntLit8),
+            "and-int/lit8" => Ok(LitArithType8::AndIntLit8),
+            "or-int/lit8" => Ok(LitArithType8::OrIntLit8),
+            "xor-int/lit8" => Ok(LitArithType8::XorIntLit8),
+            "shl-int/lit8" => Ok(LitArithType8::ShlIntLit8),
+            "shr-int/lit8" => Ok(LitArithType8::ShrIntLit8),
+            "ushr-int/lit8" => Ok(LitArithType8::UshrIntLit8),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for LitArithType8 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LitArithType8::AddIntLit8 => write!(f, "add-int/lit8"),
+            LitArithType8::RSubIntLit8 => write!(f, "rsub-int/lit8"),
+            LitArithType8::MulIntLit8 => write!(f, "mul-int/lit8"),
+            LitArithType8::DivIntLit8 => write!(f, "div-int/lit8"),
+            LitArithType8::RemIntLit8 => write!(f, "rem-int/lit8"),
+            LitArithType8::AndIntLit8 => write!(f, "and-int/lit8"),
+            LitArithType8::OrIntLit8 => write!(f, "or-int/lit8"),
+            LitArithType8::XorIntLit8 => write!(f, "xor-int/lit8"),
+            LitArithType8::ShlIntLit8 => write!(f, "shl-int/lit8"),
+            LitArithType8::ShrIntLit8 => write!(f, "shr-int/lit8"),
+            LitArithType8::UshrIntLit8 => write!(f, "ushr-int/lit8"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LitArithType16 {
+    AddIntLit16,
+    RSubIntLit16,
+    MulIntLit16,
+    DivIntLit16,
+    RemIntLit16,
+    AndIntLit16,
+    OrIntLit16,
+    XorIntLit16,
+}
+
+impl FromStr for LitArithType16 {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "add-int/lit16" => Ok(LitArithType16::AddIntLit16),
+            "rsub-int" => Ok(LitArithType16::RSubIntLit16),
+            "mul-int/lit16" => Ok(LitArithType16::MulIntLit16),
+            "div-int/lit16" => Ok(LitArithType16::DivIntLit16),
+            "rem-int/lit16" => Ok(LitArithType16::RemIntLit16),
+            "and-int/lit16" => Ok(LitArithType16::AndIntLit16),
+            "or-int/lit16" => Ok(LitArithType16::OrIntLit16),
+            "xor-int/lit16" => Ok(LitArithType16::XorIntLit16),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for LitArithType16 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LitArithType16::AddIntLit16 => write!(f, "add-int/lit16"),
+            LitArithType16::RSubIntLit16 => write!(f, "rsub-int"),
+            LitArithType16::MulIntLit16 => write!(f, "mul-int/lit16"),
+            LitArithType16::DivIntLit16 => write!(f, "div-int/lit16"),
+            LitArithType16::RemIntLit16 => write!(f, "rem-int/lit16"),
+            LitArithType16::AndIntLit16 => write!(f, "and-int/lit16"),
+            LitArithType16::OrIntLit16 => write!(f, "or-int/lit16"),
+            LitArithType16::XorIntLit16 => write!(f, "xor-int/lit16"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConvertType {
+    // Existing conversion operations
+    IntToByte,
+    IntToChar,
+    IntToShort,
+    IntToLong,
+    IntToFloat,
+    IntToDouble,
+    LongToInt,
+    LongToFloat,
+    LongToDouble,
+    FloatToInt,
+    FloatToLong,
+    FloatToDouble,
+    DoubleToInt,
+    DoubleToLong,
+    DoubleToFloat,
+}
+
+impl FromStr for ConvertType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            // Existing conversion operations
+            "int-to-byte" => Ok(ConvertType::IntToByte),
+            "int-to-char" => Ok(ConvertType::IntToChar),
+            "int-to-short" => Ok(ConvertType::IntToShort),
+            "int-to-long" => Ok(ConvertType::IntToLong),
+            "int-to-float" => Ok(ConvertType::IntToFloat),
+            "int-to-double" => Ok(ConvertType::IntToDouble),
+            "long-to-int" => Ok(ConvertType::LongToInt),
+            "long-to-float" => Ok(ConvertType::LongToFloat),
+            "long-to-double" => Ok(ConvertType::LongToDouble),
+            "float-to-int" => Ok(ConvertType::FloatToInt),
+            "float-to-long" => Ok(ConvertType::FloatToLong),
+            "float-to-double" => Ok(ConvertType::FloatToDouble),
+            "double-to-int" => Ok(ConvertType::DoubleToInt),
+            "double-to-long" => Ok(ConvertType::DoubleToLong),
+            "double-to-float" => Ok(ConvertType::DoubleToFloat),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ConvertType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConvertType::IntToByte => write!(f, "int-to-byte"),
+            ConvertType::IntToChar => write!(f, "int-to-char"),
+            ConvertType::IntToShort => write!(f, "int-to-short"),
+            ConvertType::IntToLong => write!(f, "int-to-long"),
+            ConvertType::IntToFloat => write!(f, "int-to-float"),
+            ConvertType::IntToDouble => write!(f, "int-to-double"),
+            ConvertType::LongToInt => write!(f, "long-to-int"),
+            ConvertType::LongToFloat => write!(f, "long-to-float"),
+            ConvertType::LongToDouble => write!(f, "long-to-double"),
+            ConvertType::FloatToInt => write!(f, "float-to-int"),
+            ConvertType::FloatToLong => write!(f, "float-to-long"),
+            ConvertType::FloatToDouble => write!(f, "float-to-double"),
+            ConvertType::DoubleToInt => write!(f, "double-to-int"),
+            ConvertType::DoubleToLong => write!(f, "double-to-long"),
+            ConvertType::DoubleToFloat => write!(f, "double-to-float"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArrayAccessType {
+    Get,
+    Put,
+}
+
+impl FromStr for ArrayAccessType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "aget" => Ok(ArrayAccessType::Get),
+            "aput" => Ok(ArrayAccessType::Put),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ArrayAccessType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ArrayAccessType::Get => write!(f, "aget"),
+            ArrayAccessType::Put => write!(f, "aput"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArrayValueType {
+    Normal,
+    Wide,
+    Object,
+    Boolean,
+    Byte,
+    Char,
+    Short,
+}
+
+impl FromStr for ArrayValueType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "" => Ok(ArrayValueType::Normal),
+            "wide" => Ok(ArrayValueType::Wide),
+            "object" => Ok(ArrayValueType::Object),
+            "boolean" => Ok(ArrayValueType::Boolean),
+            "byte" => Ok(ArrayValueType::Byte),
+            "char" => Ok(ArrayValueType::Char),
+            "short" => Ok(ArrayValueType::Short),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ArrayValueType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ArrayValueType::Normal => Ok(()),
+            ArrayValueType::Wide => write!(f, "wide"),
+            ArrayValueType::Object => write!(f, "object"),
+            ArrayValueType::Boolean => write!(f, "boolean"),
+            ArrayValueType::Byte => write!(f, "byte"),
+            ArrayValueType::Char => write!(f, "char"),
+            ArrayValueType::Short => write!(f, "short"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CmpType {
+    CmplFloat,
+    CmpgFloat,
+    CmplDouble,
+    CmpgDouble,
+    CmpLong,
+}
+
+impl FromStr for CmpType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cmpl-float" => Ok(CmpType::CmplFloat),
+            "cmpg-float" => Ok(CmpType::CmpgFloat),
+            "cmpl-double" => Ok(CmpType::CmplDouble),
+            "cmpg-double" => Ok(CmpType::CmpgDouble),
+            "cmp-long" => Ok(CmpType::CmpLong),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for CmpType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CmpType::CmplFloat => write!(f, "cmpl-float"),
+            CmpType::CmpgFloat => write!(f, "cmpg-float"),
+            CmpType::CmplDouble => write!(f, "cmpl-double"),
+            CmpType::CmpgDouble => write!(f, "cmpg-double"),
+            CmpType::CmpLong => write!(f, "cmp-long"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SwitchType {
+    PackedSwitch,
+    SparseSwitch,
+}
+
+impl FromStr for SwitchType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "packed-switch" => Ok(SwitchType::PackedSwitch),
+            "sparse-switch" => Ok(SwitchType::SparseSwitch),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for SwitchType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SwitchType::PackedSwitch => write!(f, "packed-switch"),
+            SwitchType::SparseSwitch => write!(f, "sparse-switch"),
+        }
+    }
+}
+
 /// A high-level representation of a DEX operation.
 ///
 /// This enum “lifts” many opcodes so that literal values and symbolic references
@@ -62,110 +969,110 @@ impl fmt::Display for RegisterRange {
 /// directly rather than as indices.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DexOp<'a> {
-    // Group A: constants, moves, returns, etc.
-    ConstString {
-        dest: Register,
-        value: StringOrTypeSig<'a>,
-    },
-    ConstStringJumbo {
-        dest: Register,
-        value: StringOrTypeSig<'a>,
-    },
-    Nop,
-    Move {
-        dest: Register,
-        src: Register,
-    },
-    MoveFrom16 {
-        dest: Register,
-        src: Register,
-    },
-    Move16 {
-        dest: Register,
-        src: Register,
-    },
-    MoveWide {
-        dest: Register,
-        src: Register,
-    },
-    MoveWideFrom16 {
-        dest: Register,
-        src: Register,
-    },
-    MoveWide16 {
-        dest: Register,
-        src: Register,
-    },
-    MoveObject {
-        dest: Register,
-        src: Register,
-    },
-    MoveObjectFrom16 {
-        dest: Register,
-        src: Register,
-    },
-    MoveObject16 {
-        dest: Register,
-        src: Register,
-    },
-    MoveResult {
-        dest: Register,
-    },
-    MoveResultWide {
-        dest: Register,
-    },
-    MoveResultObject {
-        dest: Register,
-    },
-    MoveException {
-        dest: Register,
-    },
-    ReturnVoid,
-    Return {
-        src: Register,
-    },
-    ReturnWide {
-        src: Register,
-    },
-    ReturnObject {
-        src: Register,
-    },
-    Const4 {
-        dest: Register,
-        value: i8,
-    },
-    Const16 {
-        dest: Register,
-        value: i16,
+    Invoke {
+        invoke_type: InvokeType,
+        registers: Vec<Register>,
+        range: Option<RegisterRange>,
+        method: Option<Box<MethodRef<'a>>>,
+        call_site: Option<Cow<'a, str>>,
+        proto: Option<Cow<'a, str>>,
     },
     Const {
+        const_type: ConstType,
         dest: Register,
-        value: i32,
+        value: StringOrTypeSig<'a>,
     },
-    ConstHigh16 {
+    MoveTwoReg {
+        move_type: TwoRegMoveType,
         dest: Register,
-        value: i16,
+        src: Register,
     },
-    ConstWide16 {
+    MoveOneReg {
+        move_type: OneRegMoveType,
         dest: Register,
-        value: i16,
     },
-    ConstWide32 {
+    Return {
+        return_type: ReturnType,
+        src: Option<Register>,
+    },
+    Arith {
+        arith_type: ArithType,
+        operand_type: ArithOperandType,
         dest: Register,
-        value: i32,
+        src1: Register,
+        src2: Register,
     },
-    ConstWide {
+    Arith2Addr {
+        arith_type: ArithType,
+        operand_type: ArithOperand2AddrType,
         dest: Register,
-        value: i64,
+        src: Register,
     },
-    ConstWideHigh16 {
+    Condition {
+        cond_type: ConditionType,
+        reg1: Register,
+        offset: Label<'a>,
+    },
+    TwoRegCondition {
+        cond_type: TwoRegConditionType,
+        reg1: Register,
+        reg2: Register,
+        offset: Label<'a>,
+    },
+    Goto {
+        goto_type: GotoType,
+        offset: Label<'a>,
+    },
+    ConstLiteral {
+        const_type: ConstLiteralType,
         dest: Register,
-        value: i16,
+        value: ConstLiteralValue,
     },
-    ConstClass {
+    LitArith8 {
+        arith_type: LitArithType8,
         dest: Register,
-        class: StringOrTypeSig<'a>,
+        src: Register,
+        literal: i8,
     },
+    LitArith16 {
+        arith_type: LitArithType16,
+        dest: Register,
+        src: Register,
+        literal: i16,
+    },
+    Convert {
+        convert_type: ConvertType,
+        dest: Register,
+        src: Register,
+    },
+    Cmp {
+        cmp_type: CmpType,
+        dest: Register,
+        src1: Register,
+        src2: Register,
+    },
+    ArrayAccess {
+        access_type: ArrayAccessType,
+        value_type: ArrayValueType,
+        reg: Register,
+        arr: Register,
+        idx: Register,
+    },
+    DynamicFieldAccess {
+        access_type: DynamicFieldAccessType,
+        value_type: FieldValueType,
+        reg: Register,
+        object: Register,
+        field: FieldRef<'a>,
+    },
+    StaticFieldAccess {
+        access_type: StaticFieldAccessType,
+        value_type: FieldValueType,
+        reg: Register,
+        field: FieldRef<'a>,
+    },
+
+    Nop,
     MonitorEnter {
         src: Register,
     },
@@ -209,849 +1116,10 @@ pub enum DexOp<'a> {
     Throw {
         src: Register,
     },
-    Goto {
-        offset: Label<'a>,
-    },
-    Goto16 {
-        offset: Label<'a>,
-    },
-    Goto32 {
-        offset: Label<'a>,
-    },
-    PackedSwitch {
+    Switch {
+        switch_type: SwitchType,
         reg: Register,
         offset: Label<'a>,
-    },
-    SparseSwitch {
-        reg: Register,
-        offset: Label<'a>,
-    },
-    CmplFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    CmpgFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    CmplDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    CmpgDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    CmpLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-
-    // Group B: Array, field, and invocation operations.
-    AGet {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    AGetWide {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    AGetObject {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    AGetBoolean {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    AGetByte {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    AGetChar {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    AGetShort {
-        dest: Register,
-        array: Register,
-        index: Register,
-    },
-    APut {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    APutWide {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    APutObject {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    APutBoolean {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    APutByte {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    APutChar {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    APutShort {
-        src: Register,
-        array: Register,
-        index: Register,
-    },
-    IGet {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IGetWide {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IGetObject {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IGetBoolean {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IGetByte {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IGetChar {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IGetShort {
-        dest: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPut {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPutWide {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPutObject {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPutBoolean {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPutByte {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPutChar {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    IPutShort {
-        src: Register,
-        object: Register,
-        field: FieldRef<'a>,
-    },
-    SGet {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SGetWide {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SGetObject {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SGetBoolean {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SGetByte {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SGetChar {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SGetShort {
-        dest: Register,
-        field: FieldRef<'a>,
-    },
-    SPut {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    SPutWide {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    SPutObject {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    SPutBoolean {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    SPutByte {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    SPutChar {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    SPutShort {
-        src: Register,
-        field: FieldRef<'a>,
-    },
-    InvokeVirtual {
-        registers: Vec<Register>,
-        method: MethodRef<'a>,
-    },
-    InvokeSuper {
-        registers: Vec<Register>,
-        method: MethodRef<'a>,
-    },
-    InvokeInterface {
-        registers: Vec<Register>,
-        method: MethodRef<'a>,
-    },
-    InvokeVirtualRange {
-        range: RegisterRange,
-        method: MethodRef<'a>,
-    },
-    InvokeSuperRange {
-        range: RegisterRange,
-        method: MethodRef<'a>,
-    },
-    InvokeDirectRange {
-        range: RegisterRange,
-        method: MethodRef<'a>,
-    },
-    InvokeStaticRange {
-        range: RegisterRange,
-        method: MethodRef<'a>,
-    },
-    InvokeInterfaceRange {
-        range: RegisterRange,
-        method: MethodRef<'a>,
-    },
-    InvokeDirect {
-        registers: Vec<Register>,
-        method: MethodRef<'a>,
-    },
-    InvokeStatic {
-        registers: Vec<Register>,
-        method: MethodRef<'a>,
-    },
-
-    // Group C: Arithmetic operations (non-2addr).
-    AddInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    SubInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    MulInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    DivInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    RemInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    AndInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    OrInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    XorInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    ShlInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    ShrInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    UshrInt {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    AddLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    SubLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    MulLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    DivLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    RemLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    AndLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    OrLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    XorLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    ShlLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    ShrLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    UshrLong {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    AddFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    SubFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    MulFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    DivFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    RemFloat {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    AddDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    SubDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    MulDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    DivDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-    RemDouble {
-        dest: Register,
-        src1: Register,
-        src2: Register,
-    },
-
-    // Group D: Arithmetic operations (2addr variants).
-    AddInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    SubInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    MulInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    DivInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    RemInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    AndInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    OrInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    XorInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    ShlInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    ShrInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    UshrInt2Addr {
-        reg: Register,
-        src: Register,
-    },
-    AddLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    SubLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    MulLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    DivLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    RemLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    AndLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    OrLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    XorLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    ShlLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    ShrLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    UshrLong2Addr {
-        reg: Register,
-        src: Register,
-    },
-    AddFloat2Addr {
-        reg: Register,
-        src: Register,
-    },
-    SubFloat2Addr {
-        reg: Register,
-        src: Register,
-    },
-    MulFloat2Addr {
-        reg: Register,
-        src: Register,
-    },
-    DivFloat2Addr {
-        reg: Register,
-        src: Register,
-    },
-    RemFloat2Addr {
-        reg: Register,
-        src: Register,
-    },
-    AddDouble2Addr {
-        reg: Register,
-        src: Register,
-    },
-    SubDouble2Addr {
-        reg: Register,
-        src: Register,
-    },
-    MulDouble2Addr {
-        reg: Register,
-        src: Register,
-    },
-    DivDouble2Addr {
-        reg: Register,
-        src: Register,
-    },
-    RemDouble2Addr {
-        reg: Register,
-        src: Register,
-    },
-
-    // Additional conversion operations:
-    IntToByte {
-        dest: Register,
-        src: Register,
-    },
-    IntToChar {
-        dest: Register,
-        src: Register,
-    },
-    IntToShort {
-        dest: Register,
-        src: Register,
-    },
-
-    // Literal arithmetic operations using lit8 encoding:
-    AddIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    RSubIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    MulIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    DivIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    RemIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    AndIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    OrIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    XorIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    ShlIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    ShrIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-    UshrIntLit8 {
-        dest: Register,
-        src: Register,
-        literal: i8,
-    },
-
-    // Conditional combinator operations now using SmaliRegister:
-    IfEq {
-        reg1: Register,
-        reg2: Register,
-        offset: Label<'a>,
-    },
-    IfNe {
-        reg1: Register,
-        reg2: Register,
-        offset: Label<'a>,
-    },
-    IfLt {
-        reg1: Register,
-        reg2: Register,
-        offset: Label<'a>,
-    },
-    IfGe {
-        reg1: Register,
-        reg2: Register,
-        offset: Label<'a>,
-    },
-    IfGt {
-        reg1: Register,
-        reg2: Register,
-        offset: Label<'a>,
-    },
-    IfLe {
-        reg1: Register,
-        reg2: Register,
-        offset: Label<'a>,
-    },
-    IfEqz {
-        reg: Register,
-        offset: Label<'a>,
-    },
-    IfNez {
-        reg: Register,
-        offset: Label<'a>,
-    },
-    IfLtz {
-        reg: Register,
-        offset: Label<'a>,
-    },
-    IfGez {
-        reg: Register,
-        offset: Label<'a>,
-    },
-    IfGtz {
-        reg: Register,
-        offset: Label<'a>,
-    },
-    IfLez {
-        reg: Register,
-        offset: Label<'a>,
-    },
-
-    // Arithmetic operations:
-    NegInt {
-        dest: Register,
-        src: Register,
-    },
-    NotInt {
-        dest: Register,
-        src: Register,
-    },
-    NegLong {
-        dest: Register,
-        src: Register,
-    },
-    NotLong {
-        dest: Register,
-        src: Register,
-    },
-    NegFloat {
-        dest: Register,
-        src: Register,
-    },
-    NegDouble {
-        dest: Register,
-        src: Register,
-    },
-
-    // Conversion operations added to the DexOp enum:
-    IntToLong {
-        dest: Register,
-        src: Register,
-    },
-    IntToFloat {
-        dest: Register,
-        src: Register,
-    },
-    IntToDouble {
-        dest: Register,
-        src: Register,
-    },
-    LongToInt {
-        dest: Register,
-        src: Register,
-    },
-    LongToFloat {
-        dest: Register,
-        src: Register,
-    },
-    LongToDouble {
-        dest: Register,
-        src: Register,
-    },
-    FloatToInt {
-        dest: Register,
-        src: Register,
-    },
-    FloatToLong {
-        dest: Register,
-        src: Register,
-    },
-    FloatToDouble {
-        dest: Register,
-        src: Register,
-    },
-    DoubleToInt {
-        dest: Register,
-        src: Register,
-    },
-    DoubleToLong {
-        dest: Register,
-        src: Register,
-    },
-    DoubleToFloat {
-        dest: Register,
-        src: Register,
-    },
-
-    AddIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    RSubIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    MulIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    DivIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    RemIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    AndIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    OrIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-    XorIntLit16 {
-        dest: Register,
-        src: Register,
-        literal: i16,
-    },
-
-    // Group E: Polymorphic, custom and method handle/type constants.
-    InvokePolymorphic {
-        registers: Vec<Register>,
-        method: MethodRef<'a>,
-        proto: Cow<'a, str>,
-    },
-    InvokePolymorphicRange {
-        range: RegisterRange,
-        method: MethodRef<'a>,
-        proto: Cow<'a, str>,
-    },
-    InvokeCustom {
-        registers: Vec<Register>,
-        call_site: Cow<'a, str>,
-    },
-    InvokeCustomRange {
-        range: RegisterRange,
-        call_site: Cow<'a, str>,
-    },
-    ConstMethodHandle {
-        dest: Register,
-        method_handle: StringOrTypeSig<'a>,
-    },
-    ConstMethodType {
-        dest: Register,
-        proto: StringOrTypeSig<'a>,
     },
     Unused {
         opcode: u8,
@@ -1061,56 +1129,183 @@ pub enum DexOp<'a> {
 impl fmt::Display for DexOp<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // Group A
-            DexOp::ConstString { dest, value } => {
-                write!(f, "const-string {dest}, \"{value}\"")
+            DexOp::Invoke {
+                invoke_type,
+                registers,
+                range,
+                method,
+                call_site,
+                proto,
+            } => {
+                let regs_str = if let Some(range) = range {
+                    format!("{range}")
+                } else {
+                    let regs: Vec<String> = registers.iter().map(|r| r.to_string()).collect();
+                    format!("{{{}}}", regs.join(", "))
+                };
+
+                match invoke_type {
+                    InvokeType::Polymorphic | InvokeType::PolymorphicRange => {
+                        write!(
+                            f,
+                            "{} {}, {}, {}",
+                            invoke_type,
+                            regs_str,
+                            method.as_ref().unwrap(),
+                            proto.as_ref().unwrap()
+                        )
+                    }
+                    InvokeType::Custom | InvokeType::CustomRange => {
+                        write!(
+                            f,
+                            "{} {}, {}",
+                            invoke_type,
+                            regs_str,
+                            call_site.as_ref().unwrap()
+                        )
+                    }
+                    _ => {
+                        write!(
+                            f,
+                            "{} {}, {}",
+                            invoke_type,
+                            regs_str,
+                            method.as_ref().unwrap()
+                        )
+                    }
+                }
             }
-            DexOp::ConstStringJumbo { dest, value } => {
-                write!(f, "const-string/jumbo {dest}, \"{value}\"")
+            DexOp::Const {
+                const_type,
+                dest,
+                value,
+            } => {
+                write!(f, "{const_type} {dest}, {value}")
+            }
+            DexOp::MoveTwoReg {
+                move_type,
+                dest,
+                src,
+            } => write!(f, "{move_type} {dest}, {src}"),
+            DexOp::MoveOneReg { move_type, dest } => write!(f, "{move_type} {dest}"),
+            DexOp::Return { return_type, src } => {
+                if let Some(src_reg) = src {
+                    write!(f, "{return_type} {src_reg}")
+                } else {
+                    write!(f, "{return_type}")
+                }
+            }
+            DexOp::DynamicFieldAccess {
+                access_type,
+                value_type,
+                reg,
+                object,
+                field,
+            } => {
+                write!(f, "{access_type}-{value_type} {reg}, {object}, {field}")
+            }
+            DexOp::StaticFieldAccess {
+                access_type,
+                value_type,
+                reg,
+                field,
+            } => {
+                write!(f, "{access_type}-{value_type} {reg}, {field}")
+            }
+            DexOp::Arith {
+                arith_type,
+                operand_type,
+                dest,
+                src1,
+                src2,
+            } => {
+                write!(f, "{arith_type}-{operand_type} {dest}, {src1}, {src2}")
+            }
+            DexOp::Arith2Addr {
+                arith_type,
+                operand_type,
+                dest,
+                src,
+            } => {
+                write!(f, "{arith_type}-{operand_type} {dest}, {src}")
+            }
+            DexOp::Condition {
+                cond_type,
+                reg1,
+                offset,
+            } => {
+                write!(f, "{cond_type} {reg1}, {offset}")
+            }
+            DexOp::TwoRegCondition {
+                cond_type,
+                reg1,
+                reg2,
+                offset,
+            } => {
+                write!(f, "{cond_type} {reg1}, {reg2}, {offset}")
+            }
+            DexOp::Goto { goto_type, offset } => {
+                write!(f, "{goto_type} {offset}")
+            }
+            DexOp::ConstLiteral {
+                const_type,
+                dest,
+                value,
+            } => {
+                write!(f, "{const_type} {dest}, {value}")
+            }
+            DexOp::LitArith8 {
+                arith_type,
+                dest,
+                src,
+                literal,
+            } => {
+                write!(f, "{arith_type} {dest}, {src}, {literal}")
+            }
+            DexOp::LitArith16 {
+                arith_type,
+                dest,
+                src,
+                literal,
+            } => {
+                write!(f, "{arith_type} {dest}, {src}, {literal}")
+            }
+            DexOp::Convert {
+                convert_type,
+                dest,
+                src,
+            } => {
+                write!(f, "{convert_type} {dest}, {src}")
+            }
+            DexOp::ArrayAccess {
+                access_type,
+                value_type,
+                reg,
+                arr,
+                idx,
+            } => {
+                if let ArrayValueType::Normal = *value_type {
+                    write!(f, "{access_type} {reg}, {arr}, {idx}")
+                } else {
+                    write!(f, "{access_type}-{value_type} {reg}, {arr}, {idx}")
+                }
+            }
+            DexOp::Cmp {
+                cmp_type,
+                dest,
+                src1,
+                src2,
+            } => {
+                write!(f, "{cmp_type} {dest}, {src1}, {src2}")
+            }
+            DexOp::Switch {
+                switch_type,
+                reg,
+                offset,
+            } => {
+                write!(f, "{switch_type} {reg}, {offset}")
             }
             DexOp::Nop => write!(f, "nop"),
-            DexOp::Move { dest, src } => write!(f, "move {dest}, {src}"),
-            DexOp::MoveFrom16 { dest, src } => write!(f, "move/from16 {dest}, {src}"),
-            DexOp::Move16 { dest, src } => write!(f, "move/16 {dest} , {src}"),
-            DexOp::MoveWide { dest, src } => write!(f, "move-wide {dest}, {src}"),
-            DexOp::MoveWideFrom16 { dest, src } => {
-                write!(f, "move-wide/from16 {dest}, {src}")
-            }
-            DexOp::MoveWide16 { dest, src } => write!(f, "move-wide/16 {dest} , {src}"),
-            DexOp::MoveObject { dest, src } => write!(f, "move-object {dest}, {src}"),
-            DexOp::MoveObjectFrom16 { dest, src } => {
-                write!(f, "move-object/from16 {dest}, {src}")
-            }
-            DexOp::MoveObject16 { dest, src } => {
-                write!(f, "move-object/16 {dest} , {src}")
-            }
-            DexOp::MoveResult { dest } => write!(f, "move-result {dest}"),
-            DexOp::MoveResultWide { dest } => write!(f, "move-result-wide {dest}"),
-            DexOp::MoveResultObject { dest } => write!(f, "move-result-object {dest}"),
-            DexOp::MoveException { dest } => write!(f, "move-exception {dest}"),
-            DexOp::ReturnVoid => write!(f, "return-void"),
-            DexOp::Return { src } => write!(f, "return {src}"),
-            DexOp::ReturnWide { src } => write!(f, "return-wide {src}"),
-            DexOp::ReturnObject { src } => write!(f, "return-object {src}"),
-            DexOp::Const4 { dest, value } => write!(f, "const/4 {dest}, {value}"),
-            DexOp::Const16 { dest, value } => write!(f, "const/16 {dest}, {value}"),
-            DexOp::Const { dest, value } => write!(f, "const {dest}, {value}"),
-            DexOp::ConstHigh16 { dest, value } => {
-                write!(f, "const/high16 {dest}, 0x{value:0x}0000")
-            }
-            DexOp::ConstWide16 { dest, value } => {
-                write!(f, "const-wide/16 {dest}, {value}")
-            }
-            DexOp::ConstWide32 { dest, value } => {
-                write!(f, "const-wide/32 {dest}, {value}")
-            }
-            DexOp::ConstWide { dest, value } => {
-                write!(f, "const-wide {dest}, 0x{value:0x}L")
-            }
-            DexOp::ConstWideHigh16 { dest, value } => {
-                write!(f, "const-wide/high16 {dest}, 0x{value:0x}000000000000L")
-            }
-            DexOp::ConstClass { dest, class } => write!(f, "const-class {dest}, {class}"),
             DexOp::MonitorEnter { src } => write!(f, "monitor-enter {src}"),
             DexOp::MonitorExit { src } => write!(f, "monitor-exit {src}"),
             DexOp::CheckCast { dest, class } => write!(f, "check-cast {dest}, {class}"),
@@ -1129,7 +1324,7 @@ impl fmt::Display for DexOp<'_> {
                 class,
             } => write!(f, "new-array {dest}, {size_reg}, {class}"),
             DexOp::FilledNewArray { registers, class } => {
-                let regs: Vec<String> = registers.iter().map(|r| format!("{r}")).collect();
+                let regs: Vec<String> = registers.iter().map(|r| r.to_string()).collect();
                 write!(f, "filled-new-array {{{}}}, {}", regs.join(", "), class)
             }
             DexOp::FilledNewArrayRange { registers, class } => {
@@ -1139,508 +1334,7 @@ impl fmt::Display for DexOp<'_> {
                 write!(f, "fill-array-data {reg}, {offset}")
             }
             DexOp::Throw { src } => write!(f, "throw {src}"),
-            DexOp::Goto { offset } => write!(f, "goto {offset}"),
-            DexOp::Goto16 { offset } => write!(f, "goto/16 {offset}"),
-            DexOp::Goto32 { offset } => write!(f, "goto/32 {offset}"),
-            DexOp::PackedSwitch { reg, offset } => {
-                write!(f, "packed-switch {reg}, {offset}")
-            }
-            DexOp::SparseSwitch { reg, offset } => {
-                write!(f, "sparse-switch {reg}, {offset}")
-            }
-            DexOp::CmplFloat { dest, src1, src2 } => {
-                write!(f, "cmpl-float {dest}, {src1}, {src2}")
-            }
-            DexOp::CmpgFloat { dest, src1, src2 } => {
-                write!(f, "cmpg-float {dest}, {src1}, {src2}")
-            }
-            DexOp::CmplDouble { dest, src1, src2 } => {
-                write!(f, "cmpl-double {dest}, {src1}, {src2}")
-            }
-            DexOp::CmpgDouble { dest, src1, src2 } => {
-                write!(f, "cmpg-double {dest}, {src1}, {src2}")
-            }
-            DexOp::CmpLong { dest, src1, src2 } => {
-                write!(f, "cmp-long {dest}, {src1}, {src2}")
-            }
-            // Group B: Array, field and invocation operations.
-            DexOp::AGet { dest, array, index } => {
-                write!(f, "aget {dest}, {array}, {index}")
-            }
-            DexOp::AGetWide { dest, array, index } => {
-                write!(f, "aget-wide {dest}, {array}, {index}")
-            }
-            DexOp::AGetObject { dest, array, index } => {
-                write!(f, "aget-object {dest}, {array}, {index}")
-            }
-            DexOp::AGetBoolean { dest, array, index } => {
-                write!(f, "aget-boolean {dest}, {array}, {index}")
-            }
-            DexOp::AGetByte { dest, array, index } => {
-                write!(f, "aget-byte {dest}, {array}, {index}")
-            }
-            DexOp::AGetChar { dest, array, index } => {
-                write!(f, "aget-char {dest}, {array}, {index}")
-            }
-            DexOp::AGetShort { dest, array, index } => {
-                write!(f, "aget-short {dest}, {array}, {index}")
-            }
-            DexOp::APut { src, array, index } => write!(f, "aput {src}, {array}, {index}"),
-            DexOp::APutWide { src, array, index } => {
-                write!(f, "aput-wide {src}, {array}, {index}")
-            }
-            DexOp::APutObject { src, array, index } => {
-                write!(f, "aput-object {src}, {array}, {index}")
-            }
-            DexOp::APutBoolean { src, array, index } => {
-                write!(f, "aput-boolean {src}, {array}, {index}")
-            }
-            DexOp::APutByte { src, array, index } => {
-                write!(f, "aput-byte {src}, {array}, {index}")
-            }
-            DexOp::APutChar { src, array, index } => {
-                write!(f, "aput-char {src}, {array}, {index}")
-            }
-            DexOp::APutShort { src, array, index } => {
-                write!(f, "aput-short {src}, {array}, {index}")
-            }
-            DexOp::IGet {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget {dest}, {object}, {field}"),
-            DexOp::IGetWide {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget-wide {dest}, {object}, {field}"),
-            DexOp::IGetObject {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget-object {dest}, {object}, {field}"),
-            DexOp::IGetBoolean {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget-boolean {dest}, {object}, {field}"),
-            DexOp::IGetByte {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget-byte {dest}, {object}, {field}"),
-            DexOp::IGetChar {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget-char {dest}, {object}, {field}"),
-            DexOp::IGetShort {
-                dest,
-                object,
-                field,
-            } => write!(f, "iget-short {dest}, {object}, {field}"),
-            DexOp::IPut { src, object, field } => {
-                write!(f, "iput {src}, {object}, {field}")
-            }
-            DexOp::IPutWide { src, object, field } => {
-                write!(f, "iput-wide {src}, {object}, {field}")
-            }
-            DexOp::IPutObject { src, object, field } => {
-                write!(f, "iput-object {src}, {object}, {field}")
-            }
-            DexOp::IPutBoolean { src, object, field } => {
-                write!(f, "iput-boolean {src}, {object}, {field}")
-            }
-            DexOp::IPutByte { src, object, field } => {
-                write!(f, "iput-byte {src}, {object}, {field}")
-            }
-            DexOp::IPutChar { src, object, field } => {
-                write!(f, "iput-char {src}, {object}, {field}")
-            }
-            DexOp::IPutShort { src, object, field } => {
-                write!(f, "iput-short {src}, {object}, {field}")
-            }
-            DexOp::SGet { dest, field } => write!(f, "sget {dest}, {field}"),
-            DexOp::SGetWide { dest, field } => write!(f, "sget-wide {dest}, {field}"),
-            DexOp::SGetObject { dest, field } => write!(f, "sget-object {dest}, {field}"),
-            DexOp::SGetBoolean { dest, field } => {
-                write!(f, "sget-boolean {dest}, {field}")
-            }
-            DexOp::SGetByte { dest, field } => write!(f, "sget-byte {dest}, {field}"),
-            DexOp::SGetChar { dest, field } => write!(f, "sget-char {dest}, {field}"),
-            DexOp::SGetShort { dest, field } => write!(f, "sget-short {dest}, {field}"),
-            DexOp::SPut { src, field } => write!(f, "sput {src}, {field}"),
-            DexOp::SPutWide { src, field } => write!(f, "sput-wide {src}, {field}"),
-            DexOp::SPutObject { src, field } => write!(f, "sput-object {src}, {field}"),
-            DexOp::SPutBoolean { src, field } => write!(f, "sput-boolean {src}, {field}"),
-            DexOp::SPutByte { src, field } => write!(f, "sput-byte {src}, {field}"),
-            DexOp::SPutChar { src, field } => write!(f, "sput-char {src}, {field}"),
-            DexOp::SPutShort { src, field } => write!(f, "sput-short {src}, {field}"),
-            DexOp::InvokeVirtual { registers, method } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-virtual {{{regs}}}, {method}")
-            }
-            DexOp::InvokeSuper { registers, method } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-super {{{regs}}}, {method}")
-            }
-            DexOp::InvokeInterface { registers, method } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-interface {{{regs}}}, {method}")
-            }
-            DexOp::InvokeVirtualRange { range, method } => {
-                write!(f, "invoke-virtual/range {range}, {method}")
-            }
-            DexOp::InvokeSuperRange { range, method } => {
-                write!(f, "invoke-super/range {range}, {method}")
-            }
-            DexOp::InvokeDirectRange { range, method } => {
-                write!(f, "invoke-direct/range {range}, {method}")
-            }
-            DexOp::InvokeStaticRange { range, method } => {
-                write!(f, "invoke-static/range {range}, {method}")
-            }
-            DexOp::InvokeInterfaceRange { range, method } => {
-                write!(f, "invoke-interface/range {range}, {method}")
-            }
-
-            // Group C: Arithmetic (non-2addr)
-            DexOp::AddInt { dest, src1, src2 } => {
-                write!(f, "add-int {dest}, {src1}, {src2}")
-            }
-            DexOp::SubInt { dest, src1, src2 } => {
-                write!(f, "sub-int {dest}, {src1}, {src2}")
-            }
-            DexOp::MulInt { dest, src1, src2 } => {
-                write!(f, "mul-int {dest}, {src1}, {src2}")
-            }
-            DexOp::DivInt { dest, src1, src2 } => {
-                write!(f, "div-int {dest}, {src1}, {src2}")
-            }
-            DexOp::RemInt { dest, src1, src2 } => {
-                write!(f, "rem-int {dest}, {src1}, {src2}")
-            }
-            DexOp::AndInt { dest, src1, src2 } => {
-                write!(f, "and-int {dest}, {src1}, {src2}")
-            }
-            DexOp::OrInt { dest, src1, src2 } => {
-                write!(f, "or-int {dest}, {src1}, {src2}")
-            }
-            DexOp::XorInt { dest, src1, src2 } => {
-                write!(f, "xor-int {dest}, {src1}, {src2}")
-            }
-            DexOp::ShlInt { dest, src1, src2 } => {
-                write!(f, "shl-int {dest}, {src1}, {src2}")
-            }
-            DexOp::ShrInt { dest, src1, src2 } => {
-                write!(f, "shr-int {dest}, {src1}, {src2}")
-            }
-            DexOp::UshrInt { dest, src1, src2 } => {
-                write!(f, "ushr-int {dest}, {src1}, {src2}")
-            }
-            DexOp::AddLong { dest, src1, src2 } => {
-                write!(f, "add-long {dest}, {src1}, {src2}")
-            }
-            DexOp::SubLong { dest, src1, src2 } => {
-                write!(f, "sub-long {dest}, {src1}, {src2}")
-            }
-            DexOp::MulLong { dest, src1, src2 } => {
-                write!(f, "mul-long {dest}, {src1}, {src2}")
-            }
-            DexOp::DivLong { dest, src1, src2 } => {
-                write!(f, "div-long {dest}, {src1}, {src2}")
-            }
-            DexOp::RemLong { dest, src1, src2 } => {
-                write!(f, "rem-long {dest}, {src1}, {src2}")
-            }
-            DexOp::AndLong { dest, src1, src2 } => {
-                write!(f, "and-long {dest}, {src1}, {src2}")
-            }
-            DexOp::OrLong { dest, src1, src2 } => {
-                write!(f, "or-long {dest}, {src1}, {src2}")
-            }
-            DexOp::XorLong { dest, src1, src2 } => {
-                write!(f, "xor-long {dest}, {src1}, {src2}")
-            }
-            DexOp::ShlLong { dest, src1, src2 } => {
-                write!(f, "shl-long {dest}, {src1}, {src2}")
-            }
-            DexOp::ShrLong { dest, src1, src2 } => {
-                write!(f, "shr-long {dest}, {src1}, {src2}")
-            }
-            DexOp::UshrLong { dest, src1, src2 } => {
-                write!(f, "ushr-long {dest}, {src1}, {src2}")
-            }
-            DexOp::AddFloat { dest, src1, src2 } => {
-                write!(f, "add-float {dest}, {src1}, {src2}")
-            }
-            DexOp::SubFloat { dest, src1, src2 } => {
-                write!(f, "sub-float {dest}, {src1}, {src2}")
-            }
-            DexOp::MulFloat { dest, src1, src2 } => {
-                write!(f, "mul-float {dest}, {src1}, {src2}")
-            }
-            DexOp::DivFloat { dest, src1, src2 } => {
-                write!(f, "div-float {dest}, {src1}, {src2}")
-            }
-            DexOp::RemFloat { dest, src1, src2 } => {
-                write!(f, "rem-float {dest}, {src1}, {src2}")
-            }
-            DexOp::AddDouble { dest, src1, src2 } => {
-                write!(f, "add-double {dest}, {src1}, {src2}")
-            }
-            DexOp::SubDouble { dest, src1, src2 } => {
-                write!(f, "sub-double {dest}, {src1}, {src2}")
-            }
-            DexOp::MulDouble { dest, src1, src2 } => {
-                write!(f, "mul-double {dest}, {src1}, {src2}")
-            }
-            DexOp::DivDouble { dest, src1, src2 } => {
-                write!(f, "div-double {dest}, {src1}, {src2}")
-            }
-            DexOp::RemDouble { dest, src1, src2 } => {
-                write!(f, "rem-double {dest}, {src1}, {src2}")
-            }
-
-            // Group D: 2addr arithmetic operations.
-            DexOp::AddInt2Addr { reg, src } => write!(f, "add-int/2addr {reg}, {src}"),
-            DexOp::SubInt2Addr { reg, src } => write!(f, "sub-int/2addr {reg}, {src}"),
-            DexOp::MulInt2Addr { reg, src } => write!(f, "mul-int/2addr {reg}, {src}"),
-            DexOp::DivInt2Addr { reg, src } => write!(f, "div-int/2addr {reg}, {src}"),
-            DexOp::RemInt2Addr { reg, src } => write!(f, "rem-int/2addr {reg}, {src}"),
-            DexOp::AndInt2Addr { reg, src } => write!(f, "and-int/2addr {reg}, {src}"),
-            DexOp::OrInt2Addr { reg, src } => write!(f, "or-int/2addr {reg}, {src}"),
-            DexOp::XorInt2Addr { reg, src } => write!(f, "xor-int/2addr {reg}, {src}"),
-            DexOp::ShlInt2Addr { reg, src } => write!(f, "shl-int/2addr {reg}, {src}"),
-            DexOp::ShrInt2Addr { reg, src } => write!(f, "shr-int/2addr {reg}, {src}"),
-            DexOp::UshrInt2Addr { reg, src } => write!(f, "ushr-int/2addr {reg}, {src}"),
-            DexOp::AddLong2Addr { reg, src } => write!(f, "add-long/2addr {reg}, {src}"),
-            DexOp::SubLong2Addr { reg, src } => write!(f, "sub-long/2addr {reg}, {src}"),
-            DexOp::MulLong2Addr { reg, src } => write!(f, "mul-long/2addr {reg}, {src}"),
-            DexOp::DivLong2Addr { reg, src } => write!(f, "div-long/2addr {reg}, {src}"),
-            DexOp::RemLong2Addr { reg, src } => write!(f, "rem-long/2addr {reg}, {src}"),
-            DexOp::AndLong2Addr { reg, src } => write!(f, "and-long/2addr {reg}, {src}"),
-            DexOp::OrLong2Addr { reg, src } => write!(f, "or-long/2addr {reg}, {src}"),
-            DexOp::XorLong2Addr { reg, src } => write!(f, "xor-long/2addr {reg}, {src}"),
-            DexOp::ShlLong2Addr { reg, src } => write!(f, "shl-long/2addr {reg}, {src}"),
-            DexOp::ShrLong2Addr { reg, src } => write!(f, "shr-long/2addr {reg}, {src}"),
-            DexOp::UshrLong2Addr { reg, src } => write!(f, "ushr-long/2addr {reg}, {src}"),
-            DexOp::AddFloat2Addr { reg, src } => write!(f, "add-float/2addr {reg}, {src}"),
-            DexOp::SubFloat2Addr { reg, src } => write!(f, "sub-float/2addr {reg}, {src}"),
-            DexOp::MulFloat2Addr { reg, src } => write!(f, "mul-float/2addr {reg}, {src}"),
-            DexOp::DivFloat2Addr { reg, src } => write!(f, "div-float/2addr {reg}, {src}"),
-            DexOp::RemFloat2Addr { reg, src } => write!(f, "rem-float/2addr {reg}, {src}"),
-            DexOp::AddDouble2Addr { reg, src } => {
-                write!(f, "add-double/2addr {reg}, {src}")
-            }
-            DexOp::SubDouble2Addr { reg, src } => {
-                write!(f, "sub-double/2addr {reg}, {src}")
-            }
-            DexOp::MulDouble2Addr { reg, src } => {
-                write!(f, "mul-double/2addr {reg}, {src}")
-            }
-            DexOp::DivDouble2Addr { reg, src } => {
-                write!(f, "div-double/2addr {reg}, {src}")
-            }
-            DexOp::RemDouble2Addr { reg, src } => {
-                write!(f, "rem-double/2addr {reg}, {src}")
-            }
-            // Group E: Polymorphic, custom and method handle/type constants.
-            DexOp::InvokePolymorphic {
-                registers,
-                method,
-                proto,
-            } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-polymorphic {{{regs}}}, {method}, {proto}")
-            }
-            DexOp::InvokePolymorphicRange {
-                range,
-                method,
-                proto,
-            } => {
-                write!(f, "invoke-polymorphic/range {range}, {method}, {proto}")
-            }
-            DexOp::InvokeCustom {
-                registers,
-                call_site,
-            } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-custom {{{regs}}}, {call_site}")
-            }
-            DexOp::InvokeCustomRange { range, call_site } => {
-                write!(f, "invoke-custom/range {range}, {call_site}")
-            }
-            DexOp::ConstMethodHandle {
-                dest,
-                method_handle,
-            } => write!(f, "const-method-handle {dest}, {method_handle}"),
-            DexOp::ConstMethodType { dest, proto } => {
-                write!(f, "const-method-type {dest}, {proto}")
-            }
-
-            // Conditional combinatores:
-            DexOp::IfEq { reg1, reg2, offset } => {
-                write!(f, "if-eq {reg1}, {reg2}, {offset}")
-            }
-            DexOp::IfNe { reg1, reg2, offset } => {
-                write!(f, "if-ne {reg1}, {reg2}, {offset}")
-            }
-            DexOp::IfLt { reg1, reg2, offset } => {
-                write!(f, "if-lt {reg1}, {reg2}, {offset}")
-            }
-            DexOp::IfGe { reg1, reg2, offset } => {
-                write!(f, "if-ge {reg1}, {reg2}, {offset}")
-            }
-            DexOp::IfGt { reg1, reg2, offset } => {
-                write!(f, "if-gt {reg1}, {reg2}, {offset}")
-            }
-            DexOp::IfLe { reg1, reg2, offset } => {
-                write!(f, "if-le {reg1}, {reg2}, {offset}")
-            }
-
-            // Conditional combinator operations with a single register:
-            DexOp::IfEqz { reg, offset } => write!(f, "if-eqz {reg}, {offset}"),
-            DexOp::IfNez { reg, offset } => write!(f, "if-nez {reg}, {offset}"),
-            DexOp::IfLtz { reg, offset } => write!(f, "if-ltz {reg}, {offset}"),
-            DexOp::IfGez { reg, offset } => write!(f, "if-gez {reg}, {offset}"),
-            DexOp::IfGtz { reg, offset } => write!(f, "if-gtz {reg}, {offset}"),
-            DexOp::IfLez { reg, offset } => write!(f, "if-lez {reg}, {offset}"),
-
-            // Invocation operations
-            DexOp::InvokeDirect { registers, method } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-direct {{{regs}}}, {method}")
-            }
-            DexOp::InvokeStatic { registers, method } => {
-                let regs = registers
-                    .iter()
-                    .map(|r| format!("{r}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "invoke-static {{{regs}}}, {method}")
-            }
-
-            // Arithmetic operations
-            DexOp::NegInt { dest, src } => write!(f, "neg-int {dest}, {src}"),
-            DexOp::NotInt { dest, src } => write!(f, "not-int {dest}, {src}"),
-            DexOp::NegLong { dest, src } => write!(f, "neg-long {dest}, {src}"),
-            DexOp::NotLong { dest, src } => write!(f, "not-long {dest}, {src}"),
-            DexOp::NegFloat { dest, src } => write!(f, "neg-float {dest}, {src}"),
-            DexOp::NegDouble { dest, src } => write!(f, "neg-double {dest}, {src}"),
-
-            // Conversion operations:
-            DexOp::IntToLong { dest, src } => write!(f, "int-to-long {dest}, {src}"),
-            DexOp::IntToFloat { dest, src } => write!(f, "int-to-float {dest}, {src}"),
-            DexOp::IntToDouble { dest, src } => write!(f, "int-to-double {dest}, {src}"),
-            DexOp::LongToInt { dest, src } => write!(f, "long-to-int {dest}, {src}"),
-            DexOp::LongToFloat { dest, src } => write!(f, "long-to-float {dest}, {src}"),
-            DexOp::LongToDouble { dest, src } => write!(f, "long-to-double {dest}, {src}"),
-            DexOp::FloatToInt { dest, src } => write!(f, "float-to-int {dest}, {src}"),
-            DexOp::FloatToLong { dest, src } => write!(f, "float-to-long {dest}, {src}"),
-            DexOp::FloatToDouble { dest, src } => {
-                write!(f, "float-to-double {dest}, {src}")
-            }
-            DexOp::DoubleToInt { dest, src } => write!(f, "double-to-int {dest}, {src}"),
-            DexOp::DoubleToLong { dest, src } => write!(f, "double-to-long {dest}, {src}"),
-            DexOp::DoubleToFloat { dest, src } => {
-                write!(f, "double-to-float {dest}, {src}")
-            }
-
-            // Additional conversion variants:
-            DexOp::IntToByte { dest, src } => write!(f, "int-to-byte {dest}, {src}"),
-            DexOp::IntToChar { dest, src } => write!(f, "int-to-char {dest}, {src}"),
-            DexOp::IntToShort { dest, src } => write!(f, "int-to-short {dest}, {src}"),
-
-            // Arithmetic literal operations (example for int):
-            DexOp::AddIntLit16 { dest, src, literal } => {
-                write!(f, "add-int/lit16 {dest}, {src}, {literal}")
-            }
-            DexOp::RSubIntLit16 { dest, src, literal } => {
-                write!(f, "rsub-int {dest}, {src}, {literal}")
-            }
-            DexOp::MulIntLit16 { dest, src, literal } => {
-                write!(f, "mul-int/lit16 {dest}, {src}, {literal}")
-            }
-            DexOp::DivIntLit16 { dest, src, literal } => {
-                write!(f, "div-int/lit16 {dest}, {src}, {literal}")
-            }
-            DexOp::RemIntLit16 { dest, src, literal } => {
-                write!(f, "rem-int/lit16 {dest}, {src}, {literal}")
-            }
-            DexOp::AndIntLit16 { dest, src, literal } => {
-                write!(f, "and-int/lit16 {dest}, {src}, {literal}")
-            }
-            DexOp::OrIntLit16 { dest, src, literal } => {
-                write!(f, "or-int/lit16 {dest}, {src}, {literal}")
-            }
-            DexOp::XorIntLit16 { dest, src, literal } => {
-                write!(f, "xor-int/lit16 {dest}, {src}, {literal}")
-            }
-
-            // Literal arithmetic operations (lit8 variants):
-            DexOp::AddIntLit8 { dest, src, literal } => {
-                write!(f, "add-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::RSubIntLit8 { dest, src, literal } => {
-                write!(f, "rsub-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::MulIntLit8 { dest, src, literal } => {
-                write!(f, "mul-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::DivIntLit8 { dest, src, literal } => {
-                write!(f, "div-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::RemIntLit8 { dest, src, literal } => {
-                write!(f, "rem-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::AndIntLit8 { dest, src, literal } => {
-                write!(f, "and-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::OrIntLit8 { dest, src, literal } => {
-                write!(f, "or-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::XorIntLit8 { dest, src, literal } => {
-                write!(f, "xor-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::ShlIntLit8 { dest, src, literal } => {
-                write!(f, "shl-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::ShrIntLit8 { dest, src, literal } => {
-                write!(f, "shr-int/lit8 {dest}, {src}, {literal}")
-            }
-            DexOp::UshrIntLit8 { dest, src, literal } => {
-                write!(f, "ushr-int/lit8 {dest}, {src}, {literal}")
-            }
-
-            // Unused - shouldn't come across this
-            DexOp::Unused { .. } => {
-                panic!("Attempted fmt display on Unused operation")
-            }
+            DexOp::Unused { opcode } => write!(f, "unused {opcode}"),
         }
     }
 }
@@ -1662,39 +1356,37 @@ pub fn parse_register<'a>() -> impl ModalParser<&'a str, Register, InputError<&'
 /// Parse a comma-separated list of registers inside curly braces.
 fn parse_register_list<'a>() -> impl ModalParser<&'a str, Vec<Register>, InputError<&'a str>> {
     delimited(
-        one_of('{'),
-        separated(0.., parse_register(), (space0, one_of(','), space0)),
-        one_of('}'),
+        ws(one_of('{')),
+        separated(0.., parse_register(), ws(one_of(','))),
+        ws(one_of('}')),
     )
 }
 
 fn parse_const_high16<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_int_lit::<i32>(),
-        )
-            .map(|(dest, _, value32)| {
-                let value = (value32 >> 16) as i16;
-                DexOp::ConstHigh16 { dest, value }
-            }),
+        (parse_register(), ws(one_of(',')), parse_int_lit::<i32>()).map(|(dest, _, value32)| {
+            let value = (value32 >> 16) as i64;
+            DexOp::ConstLiteral {
+                const_type: ConstLiteralType::ConstHigh16,
+                dest,
+                value: ConstLiteralValue::ConstHigh16(value),
+            }
+        }),
     )
 }
 
 fn parse_const_wide_high16<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_int_lit::<i64>(),
-        )
-            .map(|(dest, _, value64)| {
-                let value = (value64 >> 48) as i16;
-                DexOp::ConstWideHigh16 { dest, value }
-            }),
+        (parse_register(), ws(one_of(',')), parse_int_lit::<i64>()).map(|(dest, _, value64)| {
+            let value = value64 >> 48;
+            DexOp::ConstLiteral {
+                const_type: ConstLiteralType::ConstWideHigh16,
+                dest,
+                value: ConstLiteralValue::ConstWideHigh16(value),
+            }
+        }),
     )
 }
 
@@ -1714,18 +1406,17 @@ fn parse_invoke_polymorphic<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputE
         space1,
         (
             parse_register_list(),
-            delimited(space0, one_of(','), space0),
-            parse_method_ref(),
-            delimited(space0, one_of(','), space0),
+            delimited(ws(one_of(',')), parse_method_ref(), ws(one_of(','))),
             alphanumeric1,
         )
-            .map(
-                |(registers, _, method, _, proto)| DexOp::InvokePolymorphic {
-                    registers,
-                    method,
-                    proto: Cow::Borrowed(proto),
-                },
-            ),
+            .map(|(registers, method, proto)| DexOp::Invoke {
+                invoke_type: InvokeType::Polymorphic,
+                registers,
+                range: None,
+                method: Some(Box::new(method)),
+                call_site: None,
+                proto: Some(Cow::Borrowed(proto)),
+            }),
     )
 }
 
@@ -1735,74 +1426,84 @@ fn parse_invoke_polymorphic_range<'a>() -> impl ModalParser<&'a str, DexOp<'a>, 
         space1,
         (
             parse_register_range(),
-            delimited(space0, one_of(','), space0),
-            parse_method_ref(),
-            delimited(space0, one_of(','), space0),
+            delimited(ws(one_of(',')), parse_method_ref(), ws(one_of(','))),
             alphanumeric1,
         )
-            .map(
-                |(range, _, method, _, proto)| DexOp::InvokePolymorphicRange {
-                    range,
-                    method,
-                    proto: Cow::Borrowed(proto),
-                },
-            ),
+            .map(|(range, method, proto)| DexOp::Invoke {
+                invoke_type: InvokeType::PolymorphicRange,
+                registers: Vec::new(),
+                range: Some(range),
+                method: Some(Box::new(method)),
+                call_site: None,
+                proto: Some(Cow::Borrowed(proto)),
+            }),
     )
 }
 
 fn parse_invoke_custom<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        (
-            parse_register_list(),
-            delimited(space0, one_of(','), space0),
-            alphanumeric1,
-        )
-            .map(|(registers, _, call_site)| DexOp::InvokeCustom {
+        (parse_register_list(), ws(one_of(',')), alphanumeric1).map(|(registers, _, call_site)| {
+            DexOp::Invoke {
+                invoke_type: InvokeType::Custom,
                 registers,
-                call_site: Cow::Borrowed(call_site),
-            }),
+                range: None,
+                method: None,
+                call_site: Some(Cow::Borrowed(call_site)),
+                proto: None,
+            }
+        }),
     )
 }
 
 fn parse_invoke_custom_range<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
     preceded(
         space1,
-        (
-            parse_register_range(),
-            delimited(space0, one_of(','), space0),
-            alphanumeric1,
-        )
-            .map(|(range, _, call_site)| DexOp::InvokeCustomRange {
-                range,
-                call_site: Cow::Borrowed(call_site),
-            }),
+        (parse_register_range(), ws(one_of(',')), alphanumeric1).map(|(range, _, call_site)| {
+            DexOp::Invoke {
+                invoke_type: InvokeType::CustomRange,
+                registers: Vec::new(),
+                range: Some(range),
+                method: None,
+                call_site: Some(Cow::Borrowed(call_site)),
+                proto: None,
+            }
+        }),
     )
 }
 
-fn parse_invoke<'a, F>(constructor: F) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
-where
-    F: Fn(Vec<Register>, MethodRef<'a>) -> DexOp<'a>,
-{
-    preceded(
-        space1,
-        (
-            parse_register_list(),
-            delimited(space0, one_of(','), space0),
-            parse_method_ref(),
-        )
-            .map(move |(registers, _, method)| constructor(registers, method)),
+fn parse_invoke<'a>(
+    invoke_type: InvokeType,
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
+    (
+        terminated(parse_register_list(), ws(one_of(','))),
+        parse_method_ref(),
     )
-}
-
-macro_rules! invoke_case {
-    ($variant:ident, $input:ident) => {
-        parse_invoke(|regs, method| DexOp::$variant {
-            registers: regs,
-            method,
+        .map(move |(registers, method)| DexOp::Invoke {
+            invoke_type,
+            registers,
+            range: None,
+            method: Some(Box::new(method)),
+            call_site: None,
+            proto: None,
         })
-        .parse_next(&mut $input)?
-    };
+}
+
+fn parse_invoke_range<'a>(
+    invoke_type: InvokeType,
+) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>> {
+    (
+        terminated(parse_register_range(), ws(one_of(','))),
+        parse_method_ref(),
+    )
+        .map(move |(range, method)| DexOp::Invoke {
+            invoke_type,
+            registers: Vec::new(),
+            range: Some(range),
+            method: Some(Box::new(method)),
+            call_site: None,
+            proto: None,
+        })
 }
 
 fn parse_one_reg_op<'a, F>(
@@ -1811,12 +1512,7 @@ fn parse_one_reg_op<'a, F>(
 where
     F: Fn(Register) -> DexOp<'a>,
 {
-    preceded(space1, parse_register().map(constructor))
-}
-macro_rules! one_reg_case {
-    ($variant:ident, $field:ident, $input:ident) => {
-        parse_one_reg_op(|r| DexOp::$variant { $field: r }).parse_next(&mut $input)?
-    };
+    parse_register().map(constructor)
 }
 
 /// Helper function: it consumes a space, then a register, then a comma (with optional spaces), then another register.
@@ -1826,26 +1522,11 @@ fn parse_two_reg_op<'a, F>(
 where
     F: Fn(Register, Register) -> DexOp<'a>,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-        )
-            .map(move |(r1, _, r2)| constructor(r1, r2)),
+    (
+        terminated(parse_register(), ws(one_of(','))),
+        parse_register(),
     )
-}
-
-/// Macro for two-register operations. You specify the variant name and the names of the fields.
-macro_rules! two_reg_case {
-    ($variant:ident, $field1:ident, $field2:ident, $input:ident) => {
-        parse_two_reg_op(|r1, r2| DexOp::$variant {
-            $field1: r1,
-            $field2: r2,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(r1, r2)| constructor(r1, r2))
 }
 
 /// Helper function: parses three registers from the input.
@@ -1857,31 +1538,12 @@ fn parse_three_reg_op<'a, F>(
 where
     F: Fn(Register, Register, Register) -> DexOp<'a>,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-        )
-            .map(move |(r1, _, r2, _, r3)| constructor(r1, r2, r3)),
+    (
+        parse_register(),
+        delimited(ws(one_of(',')), parse_register(), ws(one_of(','))),
+        parse_register(),
     )
-}
-
-/// Macro for three-register operations.
-/// You supply the enum variant and the field names for each register,
-/// along with the input.
-macro_rules! three_reg_case {
-    ($variant:ident, $field1:ident, $field2:ident, $field3:ident, $input:ident) => {
-        parse_three_reg_op(|r1, r2, r3| DexOp::$variant {
-            $field1: r1,
-            $field2: r2,
-            $field3: r3,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(r1, r2, r3)| constructor(r1, r2, r3))
 }
 
 /// Helper for one-reg + literal operations.
@@ -1894,25 +1556,11 @@ where
     F: Fn(Register, T) -> DexOp<'a>,
     <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_int_lit::<T>(),
-        )
-            .map(move |(reg, _, literal)| constructor(reg, literal)),
+    (
+        terminated(parse_register(), ws(one_of(','))),
+        parse_int_lit::<T>(),
     )
-}
-
-macro_rules! one_reg_lit_case {
-    ($variant:ident, $field:ident, $lit_ty:ty, $input:ident) => {
-        parse_one_reg_and_literal::<$lit_ty, _>(|r, lit| DexOp::$variant {
-            $field: r,
-            value: lit,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(reg, literal)| constructor(reg, literal))
 }
 
 /// Helper for two-reg + literal operations.
@@ -1924,28 +1572,12 @@ where
     F: Fn(Register, Register, T) -> DexOp<'a>,
     <T as TryFrom<i64>>::Error: std::fmt::Debug,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_int_lit::<T>(),
-        )
-            .map(move |(r1, _, r2, _, literal)| constructor(r1, r2, literal)),
+    (
+        parse_register(),
+        delimited(ws(one_of(',')), parse_register(), ws(one_of(','))),
+        parse_int_lit::<T>(),
     )
-}
-
-macro_rules! two_reg_lit_case {
-    ($variant:ident, $field1:ident, $field2:ident, $lit_ty:ty, $input:ident) => {
-        parse_two_reg_and_literal::<$lit_ty, _>(|r1, r2, lit| DexOp::$variant {
-            $field1: r1,
-            $field2: r2,
-            literal: lit,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(r1, r2, literal)| constructor(r1, r2, literal))
 }
 
 fn parse_one_reg_and_fieldref<'a, F>(
@@ -1954,22 +1586,11 @@ fn parse_one_reg_and_fieldref<'a, F>(
 where
     F: Fn(Register, FieldRef) -> DexOp + 'a,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_field_ref(),
-        )
-            .map(move |(dest, _, field)| constructor(dest, field)),
+    (
+        terminated(parse_register(), ws(one_of(','))),
+        parse_field_ref(),
     )
-}
-
-macro_rules! one_reg_fieldref_case {
-    ($variant:ident, $reg:ident, $input:ident) => {
-        parse_one_reg_and_fieldref(|reg, field| DexOp::$variant { $reg: reg, field })
-            .parse_next(&mut $input)?
-    };
+        .map(move |(dest, field)| constructor(dest, field))
 }
 
 fn parse_two_reg_and_fieldref<'a, F>(
@@ -1978,28 +1599,12 @@ fn parse_two_reg_and_fieldref<'a, F>(
 where
     F: Fn(Register, Register, FieldRef) -> DexOp + 'a,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_field_ref(),
-        )
-            .map(move |(reg1, _, reg2, _, field)| constructor(reg1, reg2, field)),
+    (
+        parse_register(),
+        delimited(ws(one_of(',')), parse_register(), ws(one_of(','))),
+        parse_field_ref(),
     )
-}
-
-macro_rules! two_reg_fieldref_case {
-    ($variant:ident, $reg1:ident, $input:ident) => {
-        parse_two_reg_and_fieldref(|reg1, object, field| DexOp::$variant {
-            $reg1: reg1,
-            object,
-            field,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(reg1, reg2, field)| constructor(reg1, reg2, field))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2013,7 +1618,7 @@ impl fmt::Display for StringOrTypeSig<'_> {
         // Prepend a colon when printing
         match &self {
             Self::String(s) => {
-                write!(f, "{s}")
+                write!(f, "\"{s}\"")
             }
             Self::TypeSig(ts) => {
                 write!(f, "{ts}")
@@ -2030,28 +1635,14 @@ fn parse_one_reg_and_string<'a, F>(
 where
     F: Fn(Register, StringOrTypeSig<'a>) -> DexOp<'a>,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            alt((
-                parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
-                parse_typesignature().map(StringOrTypeSig::TypeSig),
-            )),
-        )
-            .map(move |(reg, _, literal)| constructor(reg, literal)),
+    (
+        terminated(parse_register(), ws(one_of(','))),
+        alt((
+            parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
+            parse_typesignature().map(StringOrTypeSig::TypeSig),
+        )),
     )
-}
-
-macro_rules! one_reg_string_case {
-    ($variant:ident, $field:ident, $string:ident, $input:ident) => {
-        parse_one_reg_and_string(|r, lit| DexOp::$variant {
-            $field: r,
-            $string: lit,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(reg, literal)| constructor(reg, literal))
 }
 
 fn parse_two_reg_and_string<'a, F>(
@@ -2060,31 +1651,15 @@ fn parse_two_reg_and_string<'a, F>(
 where
     F: Fn(Register, Register, StringOrTypeSig<'a>) -> DexOp<'a>,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            alt((
-                parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
-                parse_typesignature().map(StringOrTypeSig::TypeSig),
-            )),
-        )
-            .map(move |(reg1, _, reg2, _, literal)| constructor(reg1, reg2, literal)),
+    (
+        parse_register(),
+        delimited(ws(one_of(',')), parse_register(), ws(one_of(','))),
+        alt((
+            parse_string_lit().map(|s| StringOrTypeSig::String(Cow::Borrowed(s))),
+            parse_typesignature().map(StringOrTypeSig::TypeSig),
+        )),
     )
-}
-
-macro_rules! two_reg_string_case {
-    ($variant:ident, $reg:ident, $string:ident, $input:ident) => {
-        parse_two_reg_and_string(|dest, reg, lit| DexOp::$variant {
-            dest,
-            $reg: reg,
-            $string: lit,
-        })
-        .parse_next(&mut $input)?
-    };
+        .map(move |(reg1, reg2, literal)| constructor(reg1, reg2, literal))
 }
 
 fn parse_one_reg_and_label<'a, F>(
@@ -2093,22 +1668,8 @@ fn parse_one_reg_and_label<'a, F>(
 where
     F: Fn(Register, Label<'a>) -> DexOp<'a>,
 {
-    preceded(
-        space1,
-        (
-            parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_label(),
-        )
-            .map(move |(reg, _, label)| constructor(reg, label)),
-    )
-}
-
-macro_rules! one_reg_label_case {
-    ($variant:ident, $input:ident) => {
-        parse_one_reg_and_label(|reg, offset| DexOp::$variant { reg, offset })
-            .parse_next(&mut $input)?
-    };
+    (terminated(parse_register(), ws(one_of(','))), parse_label())
+        .map(move |(reg, label)| constructor(reg, label))
 }
 
 fn parse_two_reg_and_label<'a, F>(
@@ -2121,298 +1682,43 @@ where
         space1,
         (
             parse_register(),
-            delimited(space0, one_of(','), space0),
-            parse_register(),
-            delimited(space0, one_of(','), space0),
+            delimited(ws(one_of(',')), parse_register(), ws(one_of(','))),
             parse_label(),
         )
-            .map(move |(reg1, _, reg2, _, label)| constructor(reg1, reg2, label)),
+            .map(move |(reg1, reg2, label)| constructor(reg1, reg2, label)),
     )
-}
-
-macro_rules! two_reg_label_case {
-    ($variant:ident, $input:ident) => {
-        parse_two_reg_and_label(|reg1, reg2, offset| DexOp::$variant { reg1, reg2, offset })
-            .parse_next(&mut $input)?
-    };
-}
-
-fn parse_range_and_method<'a, F>(
-    constructor: F,
-) -> impl ModalParser<&'a str, DexOp<'a>, InputError<&'a str>>
-where
-    F: Fn(RegisterRange, MethodRef<'a>) -> DexOp<'a>,
-{
-    preceded(
-        space1,
-        (
-            parse_register_range(),
-            delimited(space0, one_of(','), space0),
-            parse_method_ref(),
-        )
-            .map(move |(range, _, method)| constructor(range, method)),
-    )
-}
-
-macro_rules! range_method_case {
-    ($variant:ident, $input:ident) => {
-        parse_range_and_method(|range, method| DexOp::$variant { range, method })
-            .parse_next(&mut $input)?
-    };
 }
 
 // Higher level parser for all operations
-pub fn parse_dex_op<'a>(mut input: &mut &'a str) -> ModalResult<DexOp<'a>, InputError<&'a str>> {
+// Higher level parser for all operations
+pub fn parse_dex_op<'a>(input: &mut &'a str) -> ModalResult<DexOp<'a>, InputError<&'a str>> {
     let op =
         take_while(1.., |c: char| c.is_alphanumeric() || c == '-' || c == '/').parse_next(input)?;
-    let r = match op {
-        // Invoke operations
-        "invoke-static" => invoke_case!(InvokeStatic, input),
-        "invoke-virtual" => invoke_case!(InvokeVirtual, input),
-        "invoke-super" => invoke_case!(InvokeSuper, input),
-        "invoke-interface" => invoke_case!(InvokeInterface, input),
-        "invoke-direct" => invoke_case!(InvokeDirect, input),
 
-        // One-register operations.
-        "move-result" => one_reg_case!(MoveResult, dest, input),
-        "move-result-wide" => one_reg_case!(MoveResultWide, dest, input),
-        "move-result-object" => one_reg_case!(MoveResultObject, dest, input),
-        "move-exception" => one_reg_case!(MoveException, dest, input),
-        "return" => one_reg_case!(Return, src, input),
-        "return-wide" => one_reg_case!(ReturnWide, src, input),
-        "return-object" => one_reg_case!(ReturnObject, src, input),
-        "monitor-enter" => one_reg_case!(MonitorEnter, src, input),
-        "monitor-exit" => one_reg_case!(MonitorExit, src, input),
-        "throw" => one_reg_case!(Throw, src, input),
-
-        // Two register operations
-        // Group A: Move operations.
-        "move" => two_reg_case!(Move, dest, src, input),
-        "move/from16" => two_reg_case!(MoveFrom16, dest, src, input),
-        "move/16" => two_reg_case!(Move16, dest, src, input),
-        "move-wide" => two_reg_case!(MoveWide, dest, src, input),
-        "move-wide/from16" => two_reg_case!(MoveWideFrom16, dest, src, input),
-        "move-wide/16" => two_reg_case!(MoveWide16, dest, src, input),
-        "move-object" => two_reg_case!(MoveObject, dest, src, input),
-        "move-object/from16" => two_reg_case!(MoveObjectFrom16, dest, src, input),
-        "move-object/16" => two_reg_case!(MoveObject16, dest, src, input),
-        // Group A: Array length.
-        "array-length" => two_reg_case!(ArrayLength, dest, array, input),
-        // Group A: Conversion operations.
-        "int-to-byte" => two_reg_case!(IntToByte, dest, src, input),
-        "int-to-char" => two_reg_case!(IntToChar, dest, src, input),
-        "int-to-short" => two_reg_case!(IntToShort, dest, src, input),
-        // Group A: Unary arithmetic operations.
-        "neg-int" => two_reg_case!(NegInt, dest, src, input),
-        "not-int" => two_reg_case!(NotInt, dest, src, input),
-        "neg-long" => two_reg_case!(NegLong, dest, src, input),
-        "not-long" => two_reg_case!(NotLong, dest, src, input),
-        "neg-float" => two_reg_case!(NegFloat, dest, src, input),
-        "neg-double" => two_reg_case!(NegDouble, dest, src, input),
-        // Group C: Conversion arithmetic operations.
-        "int-to-long" => two_reg_case!(IntToLong, dest, src, input),
-        "int-to-float" => two_reg_case!(IntToFloat, dest, src, input),
-        "int-to-double" => two_reg_case!(IntToDouble, dest, src, input),
-        "long-to-int" => two_reg_case!(LongToInt, dest, src, input),
-        "long-to-float" => two_reg_case!(LongToFloat, dest, src, input),
-        "long-to-double" => two_reg_case!(LongToDouble, dest, src, input),
-        "float-to-int" => two_reg_case!(FloatToInt, dest, src, input),
-        "float-to-long" => two_reg_case!(FloatToLong, dest, src, input),
-        "float-to-double" => two_reg_case!(FloatToDouble, dest, src, input),
-        "double-to-int" => two_reg_case!(DoubleToInt, dest, src, input),
-        "double-to-long" => two_reg_case!(DoubleToLong, dest, src, input),
-        "double-to-float" => two_reg_case!(DoubleToFloat, dest, src, input),
-        // Group D: 2addr arithmetic operations (using reg and src).
-        "add-int/2addr" => two_reg_case!(AddInt2Addr, reg, src, input),
-        "sub-int/2addr" => two_reg_case!(SubInt2Addr, reg, src, input),
-        "mul-int/2addr" => two_reg_case!(MulInt2Addr, reg, src, input),
-        "div-int/2addr" => two_reg_case!(DivInt2Addr, reg, src, input),
-        "rem-int/2addr" => two_reg_case!(RemInt2Addr, reg, src, input),
-        "and-int/2addr" => two_reg_case!(AndInt2Addr, reg, src, input),
-        "or-int/2addr" => two_reg_case!(OrInt2Addr, reg, src, input),
-        "xor-int/2addr" => two_reg_case!(XorInt2Addr, reg, src, input),
-        "shl-int/2addr" => two_reg_case!(ShlInt2Addr, reg, src, input),
-        "shr-int/2addr" => two_reg_case!(ShrInt2Addr, reg, src, input),
-        "ushr-int/2addr" => two_reg_case!(UshrInt2Addr, reg, src, input),
-        "add-long/2addr" => two_reg_case!(AddLong2Addr, reg, src, input),
-        "sub-long/2addr" => two_reg_case!(SubLong2Addr, reg, src, input),
-        "mul-long/2addr" => two_reg_case!(MulLong2Addr, reg, src, input),
-        "div-long/2addr" => two_reg_case!(DivLong2Addr, reg, src, input),
-        "rem-long/2addr" => two_reg_case!(RemLong2Addr, reg, src, input),
-        "and-long/2addr" => two_reg_case!(AndLong2Addr, reg, src, input),
-        "or-long/2addr" => two_reg_case!(OrLong2Addr, reg, src, input),
-        "xor-long/2addr" => two_reg_case!(XorLong2Addr, reg, src, input),
-        "shl-long/2addr" => two_reg_case!(ShlLong2Addr, reg, src, input),
-        "shr-long/2addr" => two_reg_case!(ShrLong2Addr, reg, src, input),
-        "ushr-long/2addr" => two_reg_case!(UshrLong2Addr, reg, src, input),
-        "add-float/2addr" => two_reg_case!(AddFloat2Addr, reg, src, input),
-        "sub-float/2addr" => two_reg_case!(SubFloat2Addr, reg, src, input),
-        "mul-float/2addr" => two_reg_case!(MulFloat2Addr, reg, src, input),
-        "div-float/2addr" => two_reg_case!(DivFloat2Addr, reg, src, input),
-        "rem-float/2addr" => two_reg_case!(RemFloat2Addr, reg, src, input),
-        "add-double/2addr" => two_reg_case!(AddDouble2Addr, reg, src, input),
-        "sub-double/2addr" => two_reg_case!(SubDouble2Addr, reg, src, input),
-        "mul-double/2addr" => two_reg_case!(MulDouble2Addr, reg, src, input),
-        "div-double/2addr" => two_reg_case!(DivDouble2Addr, reg, src, input),
-        "rem-double/2addr" => two_reg_case!(RemDouble2Addr, reg, src, input),
-
-        // Three register operations
-        // Group B: Array get/put operations.
-        "aget" => three_reg_case!(AGet, dest, array, index, input),
-        "aget-wide" => three_reg_case!(AGetWide, dest, array, index, input),
-        "aget-object" => three_reg_case!(AGetObject, dest, array, index, input),
-        "aget-boolean" => three_reg_case!(AGetBoolean, dest, array, index, input),
-        "aget-byte" => three_reg_case!(AGetByte, dest, array, index, input),
-        "aget-char" => three_reg_case!(AGetChar, dest, array, index, input),
-        "aget-short" => three_reg_case!(AGetShort, dest, array, index, input),
-        "aput" => three_reg_case!(APut, src, array, index, input),
-        "aput-wide" => three_reg_case!(APutWide, src, array, index, input),
-        "aput-object" => three_reg_case!(APutObject, src, array, index, input),
-        "aput-boolean" => three_reg_case!(APutBoolean, src, array, index, input),
-        "aput-byte" => three_reg_case!(APutByte, src, array, index, input),
-        "aput-char" => three_reg_case!(APutChar, src, array, index, input),
-        "aput-short" => three_reg_case!(APutShort, src, array, index, input),
-        // Group C: Arithmetic operations (non-2addr and comparisons).
-        "add-int" => three_reg_case!(AddInt, dest, src1, src2, input),
-        "sub-int" => three_reg_case!(SubInt, dest, src1, src2, input),
-        "mul-int" => three_reg_case!(MulInt, dest, src1, src2, input),
-        "div-int" => three_reg_case!(DivInt, dest, src1, src2, input),
-        "rem-int" => three_reg_case!(RemInt, dest, src1, src2, input),
-        "and-int" => three_reg_case!(AndInt, dest, src1, src2, input),
-        "or-int" => three_reg_case!(OrInt, dest, src1, src2, input),
-        "xor-int" => three_reg_case!(XorInt, dest, src1, src2, input),
-        "shl-int" => three_reg_case!(ShlInt, dest, src1, src2, input),
-        "shr-int" => three_reg_case!(ShrInt, dest, src1, src2, input),
-        "ushr-int" => three_reg_case!(UshrInt, dest, src1, src2, input),
-        "add-long" => three_reg_case!(AddLong, dest, src1, src2, input),
-        "sub-long" => three_reg_case!(SubLong, dest, src1, src2, input),
-        "mul-long" => three_reg_case!(MulLong, dest, src1, src2, input),
-        "div-long" => three_reg_case!(DivLong, dest, src1, src2, input),
-        "rem-long" => three_reg_case!(RemLong, dest, src1, src2, input),
-        "and-long" => three_reg_case!(AndLong, dest, src1, src2, input),
-        "or-long" => three_reg_case!(OrLong, dest, src1, src2, input),
-        "xor-long" => three_reg_case!(XorLong, dest, src1, src2, input),
-        "shl-long" => three_reg_case!(ShlLong, dest, src1, src2, input),
-        "shr-long" => three_reg_case!(ShrLong, dest, src1, src2, input),
-        "ushr-long" => three_reg_case!(UshrLong, dest, src1, src2, input),
-        "add-float" => three_reg_case!(AddFloat, dest, src1, src2, input),
-        "sub-float" => three_reg_case!(SubFloat, dest, src1, src2, input),
-        "mul-float" => three_reg_case!(MulFloat, dest, src1, src2, input),
-        "div-float" => three_reg_case!(DivFloat, dest, src1, src2, input),
-        "rem-float" => three_reg_case!(RemFloat, dest, src1, src2, input),
-        "add-double" => three_reg_case!(AddDouble, dest, src1, src2, input),
-        "sub-double" => three_reg_case!(SubDouble, dest, src1, src2, input),
-        "mul-double" => three_reg_case!(MulDouble, dest, src1, src2, input),
-        "div-double" => three_reg_case!(DivDouble, dest, src1, src2, input),
-        "rem-double" => three_reg_case!(RemDouble, dest, src1, src2, input),
-        // Comparison operations.
-        "cmpl-float" => three_reg_case!(CmplFloat, dest, src1, src2, input),
-        "cmpg-float" => three_reg_case!(CmpgFloat, dest, src1, src2, input),
-        "cmpl-double" => three_reg_case!(CmplDouble, dest, src1, src2, input),
-        "cmpg-double" => three_reg_case!(CmpgDouble, dest, src1, src2, input),
-        "cmp-long" => three_reg_case!(CmpLong, dest, src1, src2, input),
-
-        // One-register literal operations (constants):
-        "const" => one_reg_lit_case!(Const, dest, i32, input),
-        "const/4" => one_reg_lit_case!(Const4, dest, i8, input),
-        "const/16" => one_reg_lit_case!(Const16, dest, i16, input),
-        "const-wide" => one_reg_lit_case!(ConstWide, dest, i64, input),
-        "const-wide/16" => one_reg_lit_case!(ConstWide16, dest, i16, input),
-        "const-wide/32" => one_reg_lit_case!(ConstWide32, dest, i32, input),
-
-        // Two-register literal operations (lit8):
-        "add-int/lit8" => two_reg_lit_case!(AddIntLit8, dest, src, i8, input),
-        "rsub-int/lit8" => two_reg_lit_case!(RSubIntLit8, dest, src, i8, input),
-        "mul-int/lit8" => two_reg_lit_case!(MulIntLit8, dest, src, i8, input),
-        "div-int/lit8" => two_reg_lit_case!(DivIntLit8, dest, src, i8, input),
-        "rem-int/lit8" => two_reg_lit_case!(RemIntLit8, dest, src, i8, input),
-        "and-int/lit8" => two_reg_lit_case!(AndIntLit8, dest, src, i8, input),
-        "or-int/lit8" => two_reg_lit_case!(OrIntLit8, dest, src, i8, input),
-        "xor-int/lit8" => two_reg_lit_case!(XorIntLit8, dest, src, i8, input),
-        "shl-int/lit8" => two_reg_lit_case!(ShlIntLit8, dest, src, i8, input),
-        "shr-int/lit8" => two_reg_lit_case!(ShrIntLit8, dest, src, i8, input),
-        "ushr-int/lit8" => two_reg_lit_case!(UshrIntLit8, dest, src, i8, input),
-
-        // Two-register literal operations (lit16):
-        "add-int/lit16" => two_reg_lit_case!(AddIntLit16, dest, src, i16, input),
-        "rsub-int" => two_reg_lit_case!(RSubIntLit16, dest, src, i16, input),
-        "mul-int/lit16" => two_reg_lit_case!(MulIntLit16, dest, src, i16, input),
-        "div-int/lit16" => two_reg_lit_case!(DivIntLit16, dest, src, i16, input),
-        "rem-int/lit16" => two_reg_lit_case!(RemIntLit16, dest, src, i16, input),
-        "and-int/lit16" => two_reg_lit_case!(AndIntLit16, dest, src, i16, input),
-        "or-int/lit16" => two_reg_lit_case!(OrIntLit16, dest, src, i16, input),
-        "xor-int/lit16" => two_reg_lit_case!(XorIntLit16, dest, src, i16, input),
-
-        // One reg and field
-        "sget" => one_reg_fieldref_case!(SGet, dest, input),
-        "sget-wide" => one_reg_fieldref_case!(SGetWide, dest, input),
-        "sget-object" => one_reg_fieldref_case!(SGetObject, dest, input),
-        "sget-boolean" => one_reg_fieldref_case!(SGetBoolean, dest, input),
-        "sget-byte" => one_reg_fieldref_case!(SGetByte, dest, input),
-        "sget-char" => one_reg_fieldref_case!(SGetChar, dest, input),
-        "sget-short" => one_reg_fieldref_case!(SGetShort, dest, input),
-        "sput" => one_reg_fieldref_case!(SPut, src, input),
-        "sput-wide" => one_reg_fieldref_case!(SPutWide, src, input),
-        "sput-object" => one_reg_fieldref_case!(SPutObject, src, input),
-        "sput-boolean" => one_reg_fieldref_case!(SPutBoolean, src, input),
-        "sput-byte" => one_reg_fieldref_case!(SPutByte, src, input),
-        "sput-char" => one_reg_fieldref_case!(SPutChar, src, input),
-        "sput-short" => one_reg_fieldref_case!(SPutShort, src, input),
-
-        // Two reg and field
-        "iget" => two_reg_fieldref_case!(IGet, dest, input),
-        "iget-wide" => two_reg_fieldref_case!(IGetWide, dest, input),
-        "iget-object" => two_reg_fieldref_case!(IGetObject, dest, input),
-        "iget-boolean" => two_reg_fieldref_case!(IGetBoolean, dest, input),
-        "iget-byte" => two_reg_fieldref_case!(IGetByte, dest, input),
-        "iget-char" => two_reg_fieldref_case!(IGetChar, dest, input),
-        "iget-short" => two_reg_fieldref_case!(IGetShort, dest, input),
-        "iput" => two_reg_fieldref_case!(IPut, src, input),
-        "iput-wide" => two_reg_fieldref_case!(IPutWide, src, input),
-        "iput-object" => two_reg_fieldref_case!(IPutObject, src, input),
-        "iput-boolean" => two_reg_fieldref_case!(IPutBoolean, src, input),
-        "iput-byte" => two_reg_fieldref_case!(IPutByte, src, input),
-        "iput-char" => two_reg_fieldref_case!(IPutChar, src, input),
-        "iput-short" => two_reg_fieldref_case!(IPutShort, src, input),
-
-        // One reg & string
-        "const-string" => one_reg_string_case!(ConstString, dest, value, input),
-        "const-string/jumbo" => one_reg_string_case!(ConstStringJumbo, dest, value, input),
-        "const-class" => one_reg_string_case!(ConstClass, dest, class, input),
-        "check-cast" => one_reg_string_case!(CheckCast, dest, class, input),
-        "new-instance" => one_reg_string_case!(NewInstance, dest, class, input),
-        "const-method-handle" => {
-            one_reg_string_case!(ConstMethodHandle, dest, method_handle, input)
+    // Handle ungrouped operations first
+    let op_result = match op {
+        "nop" => return Ok(DexOp::Nop),
+        "monitor-enter" => parse_one_reg_op(|src| DexOp::MonitorEnter { src }).parse_next(input)?,
+        "monitor-exit" => parse_one_reg_op(|src| DexOp::MonitorExit { src }).parse_next(input)?,
+        "check-cast" => parse_one_reg_and_string(|dest, class| DexOp::CheckCast { dest, class })
+            .parse_next(input)?,
+        "instance-of" => {
+            parse_two_reg_and_string(|dest, src, class| DexOp::InstanceOf { dest, src, class })
+                .parse_next(input)?
         }
-        "const-method-type" => one_reg_string_case!(ConstMethodType, dest, proto, input),
-
-        // Two regs & string
-        "instance-of" => two_reg_string_case!(InstanceOf, src, class, input),
-        "new-array" => two_reg_string_case!(NewArray, size_reg, class, input),
-
-        // Gotos = 1 label
-        "goto" => preceded(space1, parse_label())
-            .map(|offset| DexOp::Goto { offset })
-            .parse_next(input)?,
-        "goto/16" => preceded(space1, parse_label())
-            .map(|offset| DexOp::Goto16 { offset })
-            .parse_next(input)?,
-        "goto/32" => preceded(space1, parse_label())
-            .map(|offset| DexOp::Goto32 { offset })
-            .parse_next(input)?,
-
-        // One reg & label
-        "if-eqz" => one_reg_label_case!(IfEqz, input),
-        "if-nez" => one_reg_label_case!(IfNez, input),
-        "if-ltz" => one_reg_label_case!(IfLtz, input),
-        "if-gez" => one_reg_label_case!(IfGez, input),
-        "if-gtz" => one_reg_label_case!(IfGtz, input),
-        "if-lez" => one_reg_label_case!(IfLez, input),
-        "packed-switch" => one_reg_label_case!(PackedSwitch, input),
-        "sparse-switch" => one_reg_label_case!(SparseSwitch, input),
-        "fill-array-data" => one_reg_label_case!(FillArrayData, input),
-
-        // Arrays
+        "array-length" => {
+            parse_two_reg_op(|dest, array| DexOp::ArrayLength { dest, array }).parse_next(input)?
+        }
+        "new-instance" => {
+            parse_one_reg_and_string(|dest, class| DexOp::NewInstance { dest, class })
+                .parse_next(input)?
+        }
+        "new-array" => parse_two_reg_and_string(|dest, size_reg, class| DexOp::NewArray {
+            dest,
+            size_reg,
+            class,
+        })
+        .parse_next(input)?,
         "filled-new-array" => preceded(
             space1,
             (
@@ -2439,43 +1745,239 @@ pub fn parse_dex_op<'a>(mut input: &mut &'a str) -> ModalResult<DexOp<'a>, Input
                 }),
         )
         .parse_next(input)?,
-
-        // Two regs & label
-        "if-eq" => two_reg_label_case!(IfEq, input),
-        "if-ne" => two_reg_label_case!(IfNe, input),
-        "if-lt" => two_reg_label_case!(IfLt, input),
-        "if-ge" => two_reg_label_case!(IfGe, input),
-        "if-gt" => two_reg_label_case!(IfGt, input),
-        "if-le" => two_reg_label_case!(IfLe, input),
-
-        // Range and method
-        "invoke-virtual/range" => range_method_case!(InvokeVirtualRange, input),
-        "invoke-super/range" => range_method_case!(InvokeSuperRange, input),
-        "invoke-direct/range" => range_method_case!(InvokeDirectRange, input),
-        "invoke-static/range" => range_method_case!(InvokeStaticRange, input),
-        "invoke-interface/range" => range_method_case!(InvokeInterfaceRange, input),
-
-        // Oddities
-        "invoke-polymorphic" => parse_invoke_polymorphic().parse_next(input)?,
-        "invoke-polymorphic/range" => parse_invoke_polymorphic_range().parse_next(input)?,
-        "invoke-custom" => parse_invoke_custom().parse_next(input)?,
-        "invoke-custom/range" => parse_invoke_custom_range().parse_next(input)?,
-        "const/high16" => parse_const_high16().parse_next(input)?,
-        "const-wide/high16" => parse_const_wide_high16().parse_next(input)?,
-        "nop" => DexOp::Nop,
-        "return-void" => DexOp::ReturnVoid,
-
+        "fill-array-data" => {
+            parse_one_reg_and_label(|reg, offset| DexOp::FillArrayData { reg, offset })
+                .parse_next(input)?
+        }
+        "throw" => parse_one_reg_op(|src| DexOp::Throw { src }).parse_next(input)?,
         _ => {
-            panic!("Unhandled operation {op}")
+            if let Ok(invoke_type) = InvokeType::from_str(op) {
+                match invoke_type {
+                    InvokeType::Polymorphic => parse_invoke_polymorphic().parse_next(input)?,
+                    InvokeType::PolymorphicRange => {
+                        parse_invoke_polymorphic_range().parse_next(input)?
+                    }
+                    InvokeType::Custom => parse_invoke_custom().parse_next(input)?,
+                    InvokeType::CustomRange => parse_invoke_custom_range().parse_next(input)?,
+                    _ => {
+                        if invoke_type.is_range() {
+                            parse_invoke_range(invoke_type).parse_next(input)?
+                        } else {
+                            parse_invoke(invoke_type).parse_next(input)?
+                        }
+                    }
+                }
+            } else if let Ok(const_type) = ConstType::from_str(op) {
+                parse_one_reg_and_string(|dest, value| DexOp::Const {
+                    const_type,
+                    dest,
+                    value,
+                })
+                .parse_next(input)?
+            } else if let Ok(move_type) = TwoRegMoveType::from_str(op) {
+                parse_two_reg_op(|dest, src| DexOp::MoveTwoReg {
+                    move_type,
+                    dest,
+                    src,
+                })
+                .parse_next(input)?
+            } else if let Ok(move_type) = OneRegMoveType::from_str(op) {
+                parse_one_reg_op(|dest| DexOp::MoveOneReg { move_type, dest }).parse_next(input)?
+            } else if let Ok(return_type) = ReturnType::from_str(op) {
+                if let ReturnType::Void = return_type {
+                    DexOp::Return {
+                        return_type,
+                        src: None,
+                    }
+                } else {
+                    parse_one_reg_op(|src| DexOp::Return {
+                        return_type,
+                        src: Some(src),
+                    })
+                    .parse_next(input)?
+                }
+            } else if let Ok(cond_type) = ConditionType::from_str(op) {
+                parse_one_reg_and_label(|reg1, offset| DexOp::Condition {
+                    cond_type,
+                    reg1,
+                    offset,
+                })
+                .parse_next(input)?
+            } else if let Ok(cond_type) = TwoRegConditionType::from_str(op) {
+                parse_two_reg_and_label(|reg1, reg2, offset| DexOp::TwoRegCondition {
+                    cond_type,
+                    reg1,
+                    reg2,
+                    offset,
+                })
+                .parse_next(input)?
+            } else if let Ok(goto_type) = GotoType::from_str(op) {
+                parse_label()
+                    .map(|offset| DexOp::Goto { goto_type, offset })
+                    .parse_next(input)?
+            } else if let Ok(const_type) = ConstLiteralType::from_str(op) {
+                match const_type {
+                    ConstLiteralType::Const => {
+                        parse_one_reg_and_literal::<i32, _>(|dest, value| DexOp::ConstLiteral {
+                            const_type,
+                            dest,
+                            value: ConstLiteralValue::Const(value),
+                        })
+                        .parse_next(input)?
+                    }
+                    ConstLiteralType::Const4 => {
+                        parse_one_reg_and_literal::<i8, _>(|dest, value| DexOp::ConstLiteral {
+                            const_type,
+                            dest,
+                            value: ConstLiteralValue::Const4(value),
+                        })
+                        .parse_next(input)?
+                    }
+                    ConstLiteralType::Const16 => {
+                        parse_one_reg_and_literal::<i16, _>(|dest, value| DexOp::ConstLiteral {
+                            const_type,
+                            dest,
+                            value: ConstLiteralValue::Const16(value),
+                        })
+                        .parse_next(input)?
+                    }
+                    ConstLiteralType::ConstWide => {
+                        parse_one_reg_and_literal::<i64, _>(|dest, value| DexOp::ConstLiteral {
+                            const_type,
+                            dest,
+                            value: ConstLiteralValue::ConstWide(value),
+                        })
+                        .parse_next(input)?
+                    }
+                    ConstLiteralType::ConstWide16 => {
+                        parse_one_reg_and_literal::<i16, _>(|dest, value| DexOp::ConstLiteral {
+                            const_type,
+                            dest,
+                            value: ConstLiteralValue::ConstWide16(value),
+                        })
+                        .parse_next(input)?
+                    }
+                    ConstLiteralType::ConstWide32 => {
+                        parse_one_reg_and_literal::<i32, _>(|dest, value| DexOp::ConstLiteral {
+                            const_type,
+                            dest,
+                            value: ConstLiteralValue::ConstWide32(value),
+                        })
+                        .parse_next(input)?
+                    }
+                    ConstLiteralType::ConstHigh16 => parse_const_high16().parse_next(input)?,
+                    ConstLiteralType::ConstWideHigh16 => {
+                        parse_const_wide_high16().parse_next(input)?
+                    }
+                }
+            } else if let Ok(arith_type) = LitArithType8::from_str(op) {
+                parse_two_reg_and_literal::<i8, _>(|dest, src, literal| DexOp::LitArith8 {
+                    arith_type,
+                    dest,
+                    src,
+                    literal,
+                })
+                .parse_next(input)?
+            } else if let Ok(arith_type) = LitArithType16::from_str(op) {
+                parse_two_reg_and_literal::<i16, _>(|dest, src, literal| DexOp::LitArith16 {
+                    arith_type,
+                    dest,
+                    src,
+                    literal,
+                })
+                .parse_next(input)?
+            } else if let Ok(convert_type) = ConvertType::from_str(op) {
+                parse_two_reg_op(|dest, src| DexOp::Convert {
+                    convert_type,
+                    dest,
+                    src,
+                })
+                .parse_next(input)?
+            } else if let Ok(cmp_type) = CmpType::from_str(op) {
+                parse_three_reg_op(|dest, src1, src2| DexOp::Cmp {
+                    cmp_type,
+                    dest,
+                    src1,
+                    src2,
+                })
+                .parse_next(input)?
+            } else if let Ok(switch_type) = SwitchType::from_str(op) {
+                parse_one_reg_and_label(|reg, offset| DexOp::Switch {
+                    switch_type,
+                    reg,
+                    offset,
+                })
+                .parse_next(input)?
+            } else {
+                let (t, v) = op.split_once('-').unwrap_or((op, ""));
+
+                if let Ok(arith_type) = ArithType::from_str(t) {
+                    if let Ok(operand_type) = ArithOperandType::from_str(v) {
+                        parse_three_reg_op(|dest, src1, src2| DexOp::Arith {
+                            arith_type,
+                            operand_type,
+                            dest,
+                            src1,
+                            src2,
+                        })
+                        .parse_next(input)?
+                    } else {
+                        let operand_type = ArithOperand2AddrType::from_str(v)
+                            .map_err(|_| ErrMode::Backtrack(InputError::at(*input)))?;
+                        parse_two_reg_op(|dest, src| DexOp::Arith2Addr {
+                            arith_type,
+                            operand_type,
+                            dest,
+                            src,
+                        })
+                        .parse_next(input)?
+                    }
+                } else if let Ok(access_type) = ArrayAccessType::from_str(t) {
+                    let value_type = ArrayValueType::from_str(v)
+                        .map_err(|_| ErrMode::Backtrack(InputError::at(*input)))?;
+                    parse_three_reg_op(|reg, arr, idx| DexOp::ArrayAccess {
+                        access_type,
+                        value_type,
+                        reg,
+                        arr,
+                        idx,
+                    })
+                    .parse_next(input)?
+                } else if let Ok(access_type) = DynamicFieldAccessType::from_str(t) {
+                    let value_type = FieldValueType::from_str(v)
+                        .map_err(|_| ErrMode::Backtrack(InputError::at(*input)))?;
+                    parse_two_reg_and_fieldref(move |reg, object, field| {
+                        DexOp::DynamicFieldAccess {
+                            access_type,
+                            value_type,
+                            reg,
+                            object,
+                            field,
+                        }
+                    })
+                    .parse_next(input)?
+                } else if let Ok(access_type) = StaticFieldAccessType::from_str(t) {
+                    let value_type = FieldValueType::from_str(v)
+                        .map_err(|_| ErrMode::Backtrack(InputError::at(*input)))?;
+                    parse_one_reg_and_fieldref(move |reg, field| DexOp::StaticFieldAccess {
+                        access_type,
+                        value_type,
+                        reg,
+                        field,
+                    })
+                    .parse_next(input)?
+                } else {
+                    return Err(ErrMode::Backtrack(InputError::at(*input)));
+                }
+            }
         }
     };
 
-    Ok(r)
+    Ok(op_result)
 }
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -2484,7 +1986,8 @@ mod tests {
         let instr = parse_dex_op(&mut input).unwrap();
         assert_eq!(
             instr,
-            DexOp::ConstString {
+            DexOp::Const {
+                const_type: ConstType::String,
                 dest: Register::Local(0),
                 value: StringOrTypeSig::String(Cow::Borrowed("builder"))
             }

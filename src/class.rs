@@ -226,7 +226,6 @@ mod tests {
             assert!(!c.methods.is_empty());
 
             let second_smali = c.to_smali();
-            //println!("b {c:?}");
 
             let c2 = parse_class()
                 .parse_next(&mut second_smali.as_str())
