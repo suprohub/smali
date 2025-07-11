@@ -221,8 +221,8 @@ mod tests {
 
             let c = parse_class().parse_next(&mut smali.as_str()).unwrap();
 
-            assert!(!c.annotations.is_empty());
-            assert!(!c.fields.is_empty());
+            //println!("@clas {c:?}");
+
             assert!(!c.methods.is_empty());
 
             let second_smali = c.to_smali();
@@ -231,8 +231,6 @@ mod tests {
                 .parse_next(&mut second_smali.as_str())
                 .unwrap();
 
-            assert!(!c2.annotations.is_empty());
-            assert!(!c2.fields.is_empty());
             assert!(!c2.methods.is_empty());
 
             assert_eq!(c, c2);

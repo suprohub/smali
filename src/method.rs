@@ -116,303 +116,174 @@ mod tests {
     fn test_method() {
         use super::*;
         use winnow::Parser;
-        let mut smali = r#".method private final verifyClientState()V
-    .locals 4
+        let mut smali = r#".method public final a(JIIILxpf;)V
+    .locals 13
 
-    .line 248
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->interceptors:Ljava/util/List;
+    move-object v0, p0
 
-    const/4 v1, 0x0
+    move/from16 v1, p5
 
-    invoke-interface {v0, v1}, Ljava/util/List;->contains(Ljava/lang/Object;)Z
+    iget-object v2, v0, La27;->d:Lea6;
 
-    move-result v0
+    invoke-virtual {v2}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
 
-    const/4 v2, 0x1
+    iget v2, v0, La27;->f:I
 
-    xor-int/2addr v0, v2
+    sub-int/2addr v2, v1
 
-    if-eqz v0, :cond_f
+    sub-int v3, v2, p4
 
-    .line 251
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->networkInterceptors:Ljava/util/List;
+    iget-object v4, v0, La27;->e:[B
 
-    invoke-interface {v0, v1}, Ljava/util/List;->contains(Ljava/lang/Object;)Z
+    invoke-static {v4, v3, v2}, Ljava/util/Arrays;->copyOfRange([BII)[B
 
-    move-result v0
+    move-result-object v3
 
-    xor-int/2addr v0, v2
+    new-instance v4, Ll8b;
 
-    if-eqz v0, :cond_e
+    invoke-direct {v4, v3}, Ll8b;-><init>([B)V
 
-    .line 255
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->connectionSpecs:Ljava/util/List;
+    iget-object v3, v0, La27;->e:[B
 
-    check-cast v0, Ljava/lang/Iterable;
+    const/4 v5, 0x0
 
-    .line 1083
-    instance-of v1, v0, Ljava/util/Collection;
+    invoke-static {v3, v2, v3, v5, v1}, Ljava/lang/System;->arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V
 
-    const/4 v3, 0x0
+    iput v1, v0, La27;->f:I
 
-    if-eqz v1, :cond_1
+    iget-object v1, v0, La27;->d:Lea6;
 
-    move-object v1, v0
+    iget-object v1, v1, Lea6;->n:Ljava/lang/String;
 
-    check-cast v1, Ljava/util/Collection;
+    iget-object v2, v0, La27;->c:Lea6;
 
-    invoke-interface {v1}, Ljava/util/Collection;->isEmpty()Z
+    iget-object v3, v2, Lea6;->n:Ljava/lang/String;
 
-    move-result v1
-
-    if-eqz v1, :cond_1
-
-    :cond_0
-    move v0, v2
-
-    goto :goto_0
-
-    .line 1084
-    :cond_1
-    invoke-interface {v0}, Ljava/lang/Iterable;->iterator()Ljava/util/Iterator;
-
-    move-result-object v0
-
-    :cond_2
-    invoke-interface {v0}, Ljava/util/Iterator;->hasNext()Z
+    invoke-static {v1, v3}, Lv0g;->a(Ljava/lang/Object;Ljava/lang/Object;)Z
 
     move-result v1
 
     if-eqz v1, :cond_0
 
-    invoke-interface {v0}, Ljava/util/Iterator;->next()Ljava/lang/Object;
+    goto :goto_0
 
-    move-result-object v1
+    :cond_0
+    iget-object v1, v0, La27;->d:Lea6;
 
-    check-cast v1, Lokhttp3/ConnectionSpec;
+    iget-object v1, v1, Lea6;->n:Ljava/lang/String;
 
-    .line 255
-    invoke-virtual {v1}, Lokhttp3/ConnectionSpec;->isTls()Z
+    const-string v3, "application/x-emsg"
+
+    invoke-virtual {v3, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
 
     move-result v1
 
     if-eqz v1, :cond_2
 
-    move v0, v3
+    iget-object v1, v0, La27;->a:Lvp;
+
+    invoke-virtual {v1}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+
+    invoke-static {v4}, Lvp;->N(Ll8b;)Lc95;
+
+    move-result-object v1
+
+    invoke-virtual {v1}, Lc95;->h()Lea6;
+
+    move-result-object v3
+
+    iget-object v2, v2, Lea6;->n:Ljava/lang/String;
+
+    if-eqz v3, :cond_1
+
+    iget-object v3, v3, Lea6;->n:Ljava/lang/String;
+
+    invoke-static {v2, v3}, Lv0g;->a(Ljava/lang/Object;Ljava/lang/Object;)Z
+
+    move-result v3
+
+    if-eqz v3, :cond_1
+
+    new-instance v4, Ll8b;
+
+    invoke-virtual {v1}, Lc95;->n()[B
+
+    move-result-object v1
+
+    invoke-virtual {v1}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+
+    invoke-direct {v4, v1}, Ll8b;-><init>([B)V
 
     :goto_0
-    if-eqz v0, :cond_a
+    invoke-virtual {v4}, Ll8b;->a()I
 
-    .line 256
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->sslSocketFactoryOrNull:Ljavax/net/ssl/SSLSocketFactory;
+    move-result v10
 
-    if-nez v0, :cond_3
+    iget-object v1, v0, La27;->b:Lzpf;
 
-    move v0, v2
+    invoke-interface {v1, v4, v10, v5}, Lzpf;->b(Ll8b;II)V
 
-    goto :goto_1
+    iget-object v6, v0, La27;->b:Lzpf;
 
-    :cond_3
-    move v0, v3
+    const/4 v11, 0x0
 
-    :goto_1
-    const-string v1, "Check failed."
+    move-wide v7, p1
 
-    if-eqz v0, :cond_9
+    move/from16 v9, p3
 
-    .line 257
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->certificateChainCleaner:Lokhttp3/internal/tls/CertificateChainCleaner;
+    move-object/from16 v12, p6
 
-    if-nez v0, :cond_4
+    invoke-interface/range {v6 .. v12}, Lzpf;->a(JIIILxpf;)V
 
-    move v0, v2
-
-    goto :goto_2
-
-    :cond_4
-    move v0, v3
-
-    :goto_2
-    if-eqz v0, :cond_8
-
-    .line 258
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->x509TrustManager:Ljavax/net/ssl/X509TrustManager;
-
-    if-nez v0, :cond_5
-
-    goto :goto_3
-
-    :cond_5
-    move v2, v3
-
-    :goto_3
-    if-eqz v2, :cond_7
-
-    .line 259
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->certificatePinner:Lokhttp3/CertificatePinner;
-
-    sget-object v2, Lokhttp3/CertificatePinner;->DEFAULT:Lokhttp3/CertificatePinner;
-
-    invoke-static {v0, v2}, Lkotlin/jvm/internal/Intrinsics;->areEqual(Ljava/lang/Object;Ljava/lang/Object;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_6
-
-    goto :goto_4
-
-    :cond_6
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 258
-    :cond_7
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 257
-    :cond_8
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 256
-    :cond_9
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 261
-    :cond_a
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->sslSocketFactoryOrNull:Ljavax/net/ssl/SSLSocketFactory;
-
-    if-eqz v0, :cond_d
-
-    .line 262
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->certificateChainCleaner:Lokhttp3/internal/tls/CertificateChainCleaner;
-
-    if-eqz v0, :cond_c
-
-    .line 263
-    iget-object v0, p0, Lokhttp3/OkHttpClient;->x509TrustManager:Ljavax/net/ssl/X509TrustManager;
-
-    if-eqz v0, :cond_b
-
-    :goto_4
     return-void
 
-    :cond_b
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    const-string v1, "x509TrustManager == null"
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 262
-    :cond_c
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    const-string v1, "certificateChainCleaner == null"
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 261
-    :cond_d
-    new-instance v0, Ljava/lang/IllegalStateException;
-
-    const-string v1, "sslSocketFactory == null"
-
-    invoke-virtual {v1}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v0
-
-    .line 252
-    :cond_e
-    invoke-virtual {p0}, Lokhttp3/OkHttpClient;->networkInterceptors()Ljava/util/List;
+    :cond_1
+    invoke-virtual {v1}, Lc95;->h()Lea6;
 
     move-result-object v0
 
-    const-string v1, "Null network interceptor: "
+    new-instance v1, Ljava/lang/StringBuilder;
 
-    invoke-static {v1, v0}, Lkotlin/jvm/internal/Intrinsics;->stringPlus(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+    const-string v3, "Ignoring EMSG. Expected it to contain wrapped "
 
-    move-result-object v0
+    invoke-direct {v1, v3}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
 
-    .line 251
-    new-instance v1, Ljava/lang/IllegalStateException;
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    invoke-virtual {v0}, Ljava/lang/Object;->toString()Ljava/lang/String;
+    const-string v2, " but actual wrapped format: "
 
-    move-result-object v0
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    invoke-direct {v1, v0}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v1, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
 
-    throw v1
-
-    .line 249
-    :cond_f
-    invoke-virtual {p0}, Lokhttp3/OkHttpClient;->interceptors()Ljava/util/List;
+    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 
     move-result-object v0
 
-    const-string v1, "Null interceptor: "
+    invoke-static {v0}, Li8b;->V(Ljava/lang/String;)V
 
-    invoke-static {v1, v0}, Lkotlin/jvm/internal/Intrinsics;->stringPlus(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+    return-void
+
+    :cond_2
+    new-instance v1, Ljava/lang/StringBuilder;
+
+    const-string v2, "Ignoring sample for unsupported format: "
+
+    invoke-direct {v1, v2}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+
+    iget-object v0, v0, La27;->d:Lea6;
+
+    iget-object v0, v0, Lea6;->n:Ljava/lang/String;
+
+    invoke-virtual {v1, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 
     move-result-object v0
 
-    .line 248
-    new-instance v1, Ljava/lang/IllegalStateException;
+    invoke-static {v0}, Li8b;->V(Ljava/lang/String;)V
 
-    invoke-virtual {v0}, Ljava/lang/Object;->toString()Ljava/lang/String;
-
-    move-result-object v0
-
-    invoke-direct {v1, v0}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
-
-    throw v1
+    return-void
 .end method"#;
 
         let m = parse_method().parse_next(&mut smali).unwrap();

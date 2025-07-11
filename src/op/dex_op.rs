@@ -82,6 +82,7 @@ impl InvokeType {
                 | Self::SuperRange
                 | Self::DirectRange
                 | Self::StaticRange
+                | Self::InterfaceRange
                 | Self::PolymorphicRange
                 | Self::CustomRange
         )
@@ -1395,8 +1396,11 @@ fn parse_const_wide_high16<'a>() -> impl ModalParser<&'a str, DexOp<'a>, InputEr
 fn parse_register_range<'a>() -> impl ModalParser<&'a str, RegisterRange, InputError<&'a str>> {
     delimited(
         ws(one_of('{')),
-        (parse_register(), ws(literal("..")), parse_register())
-            .map(|(start, _, end)| RegisterRange { start, end }),
+        (
+            terminated(parse_register(), literal("..")),
+            parse_register(),
+        )
+            .map(|(start, end)| RegisterRange { start, end }),
         ws(one_of('}')),
     )
 }
@@ -2003,6 +2007,12 @@ mod tests {
     #[test]
     fn test_invoke_direct() {
         let mut input = r#"invoke-direct {p0}, Ljava/lang/Object;-><init>()V"#;
+        let _ = parse_dex_op(&mut input).unwrap();
+    }
+
+    #[test]
+    fn test_invoke_interface() {
+        let mut input = "invoke-interface/range {v6 .. v12}, Lzpf;->a(JIIILxpf;)V";
         let _ = parse_dex_op(&mut input).unwrap();
     }
 
