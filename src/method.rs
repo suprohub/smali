@@ -116,175 +116,80 @@ mod tests {
     fn test_method() {
         use super::*;
         use winnow::Parser;
-        let mut smali = r#".method public final a(JIIILxpf;)V
-    .locals 13
+        let mut smali = r#".method public final run()V
+    .locals 2
 
-    move-object v0, p0
+    iget v0, p0, La7;->a:I
 
-    move/from16 v1, p5
+    packed-switch v0, :pswitch_data_0
 
-    iget-object v2, v0, La27;->d:Lea6;
+    iget-object p0, p0, La7;->b:Landroidx/appcompat/widget/ActionBarOverlayLayout;
 
-    invoke-virtual {v2}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    invoke-virtual {p0}, Landroidx/appcompat/widget/ActionBarOverlayLayout;->b()V
 
-    iget v2, v0, La27;->f:I
+    iget-object v0, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->o:Landroidx/appcompat/widget/ActionBarContainer;
 
-    sub-int/2addr v2, v1
+    invoke-virtual {v0}, Landroid/view/View;->animate()Landroid/view/ViewPropertyAnimator;
 
-    sub-int v3, v2, p4
+    move-result-object v0
 
-    iget-object v4, v0, La27;->e:[B
+    iget-object v1, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->o:Landroidx/appcompat/widget/ActionBarContainer;
 
-    invoke-static {v4, v3, v2}, Ljava/util/Arrays;->copyOfRange([BII)[B
-
-    move-result-object v3
-
-    new-instance v4, Ll8b;
-
-    invoke-direct {v4, v3}, Ll8b;-><init>([B)V
-
-    iget-object v3, v0, La27;->e:[B
-
-    const/4 v5, 0x0
-
-    invoke-static {v3, v2, v3, v5, v1}, Ljava/lang/System;->arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V
-
-    iput v1, v0, La27;->f:I
-
-    iget-object v1, v0, La27;->d:Lea6;
-
-    iget-object v1, v1, Lea6;->n:Ljava/lang/String;
-
-    iget-object v2, v0, La27;->c:Lea6;
-
-    iget-object v3, v2, Lea6;->n:Ljava/lang/String;
-
-    invoke-static {v1, v3}, Lv0g;->a(Ljava/lang/Object;Ljava/lang/Object;)Z
+    invoke-virtual {v1}, Landroid/view/View;->getHeight()I
 
     move-result v1
 
-    if-eqz v1, :cond_0
+    neg-int v1, v1
 
-    goto :goto_0
+    int-to-float v1, v1
 
-    :cond_0
-    iget-object v1, v0, La27;->d:Lea6;
-
-    iget-object v1, v1, Lea6;->n:Ljava/lang/String;
-
-    const-string v3, "application/x-emsg"
-
-    invoke-virtual {v3, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_2
-
-    iget-object v1, v0, La27;->a:Lvp;
-
-    invoke-virtual {v1}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
-
-    invoke-static {v4}, Lvp;->N(Ll8b;)Lc95;
-
-    move-result-object v1
-
-    invoke-virtual {v1}, Lc95;->h()Lea6;
-
-    move-result-object v3
-
-    iget-object v2, v2, Lea6;->n:Ljava/lang/String;
-
-    if-eqz v3, :cond_1
-
-    iget-object v3, v3, Lea6;->n:Ljava/lang/String;
-
-    invoke-static {v2, v3}, Lv0g;->a(Ljava/lang/Object;Ljava/lang/Object;)Z
-
-    move-result v3
-
-    if-eqz v3, :cond_1
-
-    new-instance v4, Ll8b;
-
-    invoke-virtual {v1}, Lc95;->n()[B
-
-    move-result-object v1
-
-    invoke-virtual {v1}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
-
-    invoke-direct {v4, v1}, Ll8b;-><init>([B)V
-
-    :goto_0
-    invoke-virtual {v4}, Ll8b;->a()I
-
-    move-result v10
-
-    iget-object v1, v0, La27;->b:Lzpf;
-
-    invoke-interface {v1, v4, v10, v5}, Lzpf;->b(Ll8b;II)V
-
-    iget-object v6, v0, La27;->b:Lzpf;
-
-    const/4 v11, 0x0
-
-    move-wide v7, p1
-
-    move/from16 v9, p3
-
-    move-object/from16 v12, p6
-
-    invoke-interface/range {v6 .. v12}, Lzpf;->a(JIIILxpf;)V
-
-    return-void
-
-    :cond_1
-    invoke-virtual {v1}, Lc95;->h()Lea6;
+    invoke-virtual {v0, v1}, Landroid/view/ViewPropertyAnimator;->translationY(F)Landroid/view/ViewPropertyAnimator;
 
     move-result-object v0
 
-    new-instance v1, Ljava/lang/StringBuilder;
+    iget-object v1, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->J0:Lz6;
 
-    const-string v3, "Ignoring EMSG. Expected it to contain wrapped "
-
-    invoke-direct {v1, v3}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
-
-    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    const-string v2, " but actual wrapped format: "
-
-    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    invoke-virtual {v1, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
-
-    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    invoke-virtual {v0, v1}, Landroid/view/ViewPropertyAnimator;->setListener(Landroid/animation/Animator$AnimatorListener;)Landroid/view/ViewPropertyAnimator;
 
     move-result-object v0
 
-    invoke-static {v0}, Li8b;->V(Ljava/lang/String;)V
+    iput-object v0, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->I0:Landroid/view/ViewPropertyAnimator;
 
     return-void
 
-    :cond_2
-    new-instance v1, Ljava/lang/StringBuilder;
+    :pswitch_0
+    iget-object p0, p0, La7;->b:Landroidx/appcompat/widget/ActionBarOverlayLayout;
 
-    const-string v2, "Ignoring sample for unsupported format: "
+    invoke-virtual {p0}, Landroidx/appcompat/widget/ActionBarOverlayLayout;->b()V
 
-    invoke-direct {v1, v2}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    iget-object v0, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->o:Landroidx/appcompat/widget/ActionBarContainer;
 
-    iget-object v0, v0, La27;->d:Lea6;
-
-    iget-object v0, v0, Lea6;->n:Ljava/lang/String;
-
-    invoke-virtual {v1, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    invoke-virtual {v0}, Landroid/view/View;->animate()Landroid/view/ViewPropertyAnimator;
 
     move-result-object v0
 
-    invoke-static {v0}, Li8b;->V(Ljava/lang/String;)V
+    const/4 v1, 0x0
+
+    invoke-virtual {v0, v1}, Landroid/view/ViewPropertyAnimator;->translationY(F)Landroid/view/ViewPropertyAnimator;
+
+    move-result-object v0
+
+    iget-object v1, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->J0:Lz6;
+
+    invoke-virtual {v0, v1}, Landroid/view/ViewPropertyAnimator;->setListener(Landroid/animation/Animator$AnimatorListener;)Landroid/view/ViewPropertyAnimator;
+
+    move-result-object v0
+
+    iput-object v0, p0, Landroidx/appcompat/widget/ActionBarOverlayLayout;->I0:Landroid/view/ViewPropertyAnimator;
 
     return-void
-.end method"#;
+
+    :pswitch_data_0
+    .packed-switch 0x0
+        :pswitch_0
+    .end packed-switch
+.end method
+"#;
 
         let m = parse_method().parse_next(&mut smali).unwrap();
         println!("{}", write_method(&m))

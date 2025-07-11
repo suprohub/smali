@@ -379,8 +379,6 @@ pub enum ArithType {
     Rem,
     And,
     Or,
-    Neg,
-    Not,
     Xor,
     Shl,
     Shr,
@@ -398,8 +396,6 @@ impl FromStr for ArithType {
             "rem" => Ok(ArithType::Rem),
             "and" => Ok(ArithType::And),
             "or" => Ok(ArithType::Or),
-            "net" => Ok(ArithType::Or),
-            "not" => Ok(ArithType::Or),
             "xor" => Ok(ArithType::Xor),
             "shl" => Ok(ArithType::Shl),
             "shr" => Ok(ArithType::Shr),
@@ -419,12 +415,37 @@ impl fmt::Display for ArithType {
             ArithType::Rem => write!(f, "rem"),
             ArithType::And => write!(f, "and"),
             ArithType::Or => write!(f, "or"),
-            ArithType::Not => write!(f, "not"),
-            ArithType::Neg => write!(f, "neg"),
             ArithType::Xor => write!(f, "xor"),
             ArithType::Shl => write!(f, "shl"),
             ArithType::Shr => write!(f, "shr"),
             ArithType::Ushr => write!(f, "ushr"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArithUnaryType {
+    Neg,
+    Not,
+}
+
+impl FromStr for ArithUnaryType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "neg" => Ok(ArithUnaryType::Neg),
+            "not" => Ok(ArithUnaryType::Not),
+            _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for ArithUnaryType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArithUnaryType::Neg => write!(f, "neg"),
+            ArithUnaryType::Not => write!(f, "not"),
         }
     }
 }
@@ -1003,6 +1024,12 @@ pub enum DexOp<'a> {
         src1: Register,
         src2: Register,
     },
+    ArithUnary {
+        arith_type: ArithUnaryType,
+        operand_type: ArithOperandType,
+        dest: Register,
+        src: Register,
+    },
     Arith2Addr {
         arith_type: ArithType,
         operand_type: ArithOperand2AddrType,
@@ -1221,6 +1248,14 @@ impl fmt::Display for DexOp<'_> {
                 src2,
             } => {
                 write!(f, "{arith_type}-{operand_type} {dest}, {src1}, {src2}")
+            }
+            DexOp::ArithUnary {
+                arith_type,
+                operand_type,
+                dest,
+                src,
+            } => {
+                write!(f, "{arith_type}-{operand_type} {dest}, {src}")
             }
             DexOp::Arith2Addr {
                 arith_type,
@@ -1915,7 +1950,18 @@ pub fn parse_dex_op<'a>(input: &mut &'a str) -> ModalResult<DexOp<'a>, InputErro
             } else {
                 let (t, v) = op.split_once('-').unwrap_or((op, ""));
 
-                if let Ok(arith_type) = ArithType::from_str(t) {
+                if let Ok(arith_type) = ArithUnaryType::from_str(t) {
+                    let operand_type = ArithOperandType::from_str(v)
+                        .map_err(|_| ErrMode::Backtrack(InputError::at(*input)))?;
+
+                    parse_two_reg_op(|dest, src| DexOp::ArithUnary {
+                        arith_type,
+                        operand_type,
+                        dest,
+                        src,
+                    })
+                    .parse_next(input)?
+                } else if let Ok(arith_type) = ArithType::from_str(t) {
                     if let Ok(operand_type) = ArithOperandType::from_str(v) {
                         parse_three_reg_op(|dest, src1, src2| DexOp::Arith {
                             arith_type,
