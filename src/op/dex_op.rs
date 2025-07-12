@@ -1605,7 +1605,7 @@ where
 {
     (
         terminated(parse_register(), ws(one_of(','))),
-        parse_int_lit::<T>(),
+        ws(parse_int_lit::<T>()),
     )
         .map(move |(reg, literal)| constructor(reg, literal))
 }
