@@ -25,7 +25,7 @@ pub struct Method<'a> {
     /// Number of local variables required by the operations
     pub locals: Option<u32>,
     /// Number of registers required by the operations
-    pub registers: Option<u32>,
+    //pub registers: Option<u32>,
     /// Method params
     pub params: Vec<Param<'a>>,
     /// Any method level annotations
@@ -40,7 +40,7 @@ pub fn parse_method<'a>() -> impl ModalParser<&'a str, Method<'a>, InputError<&'
         (
             parse_modifiers(),
             parse_method_parameter(),
-            opt(preceded(ws(literal(".registers")), ws(parse_int_lit::<u32>()))),
+            //opt(preceded(ws(literal(".registers")), ws(parse_int_lit::<u32>()))),
             opt(preceded(ws(literal(".locals")), ws(parse_int_lit::<u32>()))),
             repeat(0.., parse_param()),
             repeat(0.., parse_annotation()),
@@ -50,11 +50,11 @@ pub fn parse_method<'a>() -> impl ModalParser<&'a str, Method<'a>, InputError<&'
         ws(literal(".end method")),
     )
     .map(
-        |(modifiers, param, locals, registers, params, annotations, _, ops)| Method {
+        |(modifiers, param, locals, params, annotations, _, ops)| Method {
             modifiers,
             param,
             locals,
-            registers,
+            //registers,
             params,
             annotations,
             ops,
