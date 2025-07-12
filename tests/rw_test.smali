@@ -29,7 +29,7 @@
 
 # direct methods
 .method public constructor <init>()V
-    # .registers 5 todo
+    .registers 5
     .locals 0
 
     .line 5
