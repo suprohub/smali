@@ -1230,7 +1230,11 @@ impl fmt::Display for DexOp<'_> {
                 object,
                 field,
             } => {
-                write!(f, "{access_type}-{value_type} {reg}, {object}, {field}")
+                if let FieldValueType::Normal = value_type {
+                    write!(f, "{access_type} {reg}, {object}, {field}")
+                } else {
+                    write!(f, "{access_type}-{value_type} {reg}, {object}, {field}")
+                }
             }
             DexOp::StaticFieldAccess {
                 access_type,
@@ -1238,7 +1242,11 @@ impl fmt::Display for DexOp<'_> {
                 reg,
                 field,
             } => {
-                write!(f, "{access_type}-{value_type} {reg}, {field}")
+                if let FieldValueType::Normal = value_type {
+                    write!(f, "{access_type} {reg}, {field}")
+                } else {
+                    write!(f, "{access_type}-{value_type} {reg}, {field}")
+                }
             }
             DexOp::Arith {
                 arith_type,
