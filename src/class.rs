@@ -37,14 +37,7 @@ use crate::{
 /// ```
 #[derive(Debug, PartialEq, Clone)]
 pub struct Class<'a> {
-    /// The name of this class
-    pub name: ObjectIdentifier<'a>,
-    /// Class modifiers
-    pub modifiers: Vec<Modifier>,
-    /// The source filename if included in the smali doc
-    pub source: Option<Cow<'a, str>>,
-    /// The class' superclass (every Java class has one)
-    pub super_class: ObjectIdentifier<'a>,
+    pub meta: ClassMeta<'a>,
     /// List of all the interfaces the class implements
     pub implements: Vec<ObjectIdentifier<'a>>,
     /// Class level annotations
@@ -53,6 +46,18 @@ pub struct Class<'a> {
     pub fields: Vec<Field<'a>>,
     /// All the methods defined by the class
     pub methods: Vec<Method<'a>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ClassMeta<'a> {
+    /// The name of this class
+    pub name: ObjectIdentifier<'a>,
+    /// Class modifiers
+    pub modifiers: Vec<Modifier>,
+    /// The source filename if included in the smali doc
+    pub source: Option<Cow<'a, str>>,
+    /// The class' superclass (every Java class has one)
+    pub super_class: ObjectIdentifier<'a>,
 }
 
 pub fn parse_class<'a>() -> impl ModalParser<&'a str, Class<'a>, InputError<&'a str>> {
@@ -74,10 +79,12 @@ pub fn parse_class<'a>() -> impl ModalParser<&'a str, Class<'a>, InputError<&'a 
         .map(
             |((modifiers, name), super_class, source, implements, annotations, fields, methods)| {
                 Class {
-                    name,
-                    modifiers,
-                    source,
-                    super_class,
+                    meta: ClassMeta {
+                        name,
+                        modifiers,
+                        source,
+                        super_class,
+                    },
                     implements,
                     annotations,
                     fields,
@@ -89,7 +96,7 @@ pub fn parse_class<'a>() -> impl ModalParser<&'a str, Class<'a>, InputError<&'a 
 
 impl Hash for Class<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
+        self.meta.name.hash(state);
     }
 }
 
@@ -137,11 +144,11 @@ impl<'a> Class<'a> {
 pub fn write_class(dex: &Class) -> String {
     let mut out = format!(
         ".class {}{}\n",
-        write_modifiers(&dex.modifiers),
-        dex.name.as_jni_type()
+        write_modifiers(&dex.meta.modifiers),
+        dex.meta.name.as_jni_type()
     );
-    out.push_str(&format!(".super {}\n", dex.super_class.as_jni_type()));
-    if let Some(s) = &dex.source {
+    out.push_str(&format!(".super {}\n", dex.meta.super_class.as_jni_type()));
+    if let Some(s) = &dex.meta.source {
         out.push_str(&format!(".source \"{s}\"\n"));
     }
 
