@@ -120,50 +120,39 @@ mod tests {
     fn test_method() {
         use super::*;
         use winnow::Parser;
-        let mut smali = r#".method static constructor <clinit>()V
-    .locals 2
-
-    new-instance v0, Lkotlin/time/Duration$Companion;
-
-    const/4 v1, 0x0
-
-    invoke-direct {v0, v1}, Lkotlin/time/Duration$Companion;-><init>(Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-
-    sput-object v0, Lkotlin/time/Duration;->Companion:Lkotlin/time/Duration$Companion;
-
-    const-wide/16 v0, 0x0
-
-    invoke-static {v0, v1}, Lkotlin/time/Duration;->constructor-impl(J)J
-
-    move-result-wide v0
-
-    sput-wide v0, Lkotlin/time/Duration;->ZERO:J
-
-    const-wide v0, 0x3fffffffffffffffL    # 1.9999999999999998
-
-    # invokes: Lkotlin/time/DurationKt;->durationOfMillis(J)J
-    invoke-static {v0, v1}, Lkotlin/time/DurationKt;->access$durationOfMillis(J)J
-
-    move-result-wide v0
-
-    sput-wide v0, Lkotlin/time/Duration;->INFINITE:J
-
-    const-wide v0, -0x3fffffffffffffffL    # -2.0000000000000004
-
-    # invokes: Lkotlin/time/DurationKt;->durationOfMillis(J)J
-    invoke-static {v0, v1}, Lkotlin/time/DurationKt;->access$durationOfMillis(J)J
-
-    move-result-wide v0
-
-    sput-wide v0, Lkotlin/time/Duration;->NEG_INFINITE:J
-
+        let mut smali = r#".method public c(Landroid/view/Display;)V
+    .locals 4
+    iget-object p0, p0, Ljrf;->b:Ljava/lang/Object;
+    check-cast p0, Lf6g;
+    if-eqz p1, :cond_0
+    invoke-virtual {p0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    invoke-virtual {p1}, Landroid/view/Display;->getRefreshRate()F
+    move-result p1
+    float-to-double v0, p1
+    const-wide v2, 0x41cdcd6500000000L
+    div-double/2addr v2, v0
+    double-to-long v0, v2
+    iput-wide v0, p0, Lf6g;->i:J
+    const-wide/16 v2, 80
+    mul-long/2addr v0, v2
+    const-wide/16 v2, 100
+    div-long/2addr v0, v2
+    iput-wide v0, p0, Lf6g;->j:J
+    goto :goto_0
+    :cond_0
+    const-wide v0, 0x8000000000000001L
+    iput-wide v0, p0, Lf6g;->i:J
+    iput-wide v0, p0, Lf6g;->j:J
+    :goto_0
     return-void
 .end method
+
 "#;
 
         let m = parse_method().parse_next(&mut smali).unwrap();
         println!("{}", write_method(&m))
     }
+
 
     #[test]
     fn test_method_with_param_annotation() {
